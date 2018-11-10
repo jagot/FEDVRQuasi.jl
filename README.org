@@ -1,0 +1,7 @@
+#+TITLE: FEDVRQuasi.jl
+#+AUTHOR: Stefanos Carlström
+#+EMAIL: stefanos.carlstrom@gmail.com
+
+Implementation of the finite-element, discrete-variable representation
+method using the [[https://github.com/JuliaApproximation/ContinuumArrays.jl][ContinuumArrays.jl]] approach. It is intended that this
+approach will eventually replace the one in [[https://github.com/jagot/FEDVR.jl][FEDVR.jl]].

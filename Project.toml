@@ -1,0 +1,12 @@
+name = "FEDVRQuasi"
+uuid = "a2e24d02-e4f7-11e8-15c0-0b59d0e1f6f3"
+authors = ["Stefanos Carlström <stefanos.carlstrom@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+BlockBandedMatrices = "ffab5731-97b5-5995-9138-79e8c1846df0"
+ContinuumArrays = "abb603bd-c6a4-5c0b-b5d0-50a836a7e82c"
+FastGaussQuadrature = "442a2c76-b920-505d-bb47-c5924d526838"
+FillArrays = "1a297f60-69ca-5386-bcde-b61e274b549b"
+IntervalSets = "8197267c-284f-5f27-9208-e0e47529a953"
+LazyArrays = "5078a376-72f3-5289-bfd5-ec5146d43c02"
