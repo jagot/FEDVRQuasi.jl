@@ -1,6 +1,6 @@
 module FEDVRQuasi
 
-import Base: axes, size, ==, getindex, checkbounds, copyto!, similar
+import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff
 import Base.Broadcast: materialize
 
 using ContinuumArrays
@@ -13,6 +13,8 @@ using LazyArrays
 import LazyArrays: Mul2
 using FillArrays
 
+using LinearAlgebra
+import LinearAlgebra: Matrix
 
 using FastGaussQuadrature, BlockBandedMatrices
 
@@ -30,15 +32,16 @@ struct FEDVR{T,O<:AbstractVector} <: AbstractQuasiMatrix{T}
     order::O
     x::Vector{T}
     xⁱ::Vector{<:SubArray{T}}
+    wⁱ::Vector{Vector{T}}
     n::Vector{T}
     nⁱ::Vector{<:SubArray{T}}
     function FEDVR(t::AbstractVector{T}, order::O) where {T,O<:AbstractVector}
         @assert length(order) == length(t)-1
         @assert all(order .> 1)
-        
+
         x,w = zip([element_grid(order[i], t[i], t[i+1])
                    for i in eachindex(order)]...)
-        
+
         n = [one(T) ./ .√(wⁱ) for wⁱ in w]
         for i in 1:length(order)-1
             n[i][end] = n[i+1][1] = one(T) ./ √(w[i][end]+w[i+1][1])
@@ -49,7 +52,7 @@ struct FEDVR{T,O<:AbstractVector} <: AbstractQuasiMatrix{T}
 
         xⁱ = [@view(X[1:order[1]])]
         nⁱ = [@view(N[1:order[1]])]
-        
+
         l = order[1]
         for i = 2:length(order)
             l′ = l+order[i]-1
@@ -57,15 +60,17 @@ struct FEDVR{T,O<:AbstractVector} <: AbstractQuasiMatrix{T}
             push!(nⁱ, @view(N[l:l′]))
             l = l′
         end
-        new{T,O}(t,order,X,xⁱ,N,nⁱ)
+        new{T,O}(t,order,X,xⁱ,[w...],N,nⁱ)
     end
 end
 
-FEDVR(t::Vector{T},order::Integer) where T = FEDVR(t, Fill(order,length(t)-1))
+FEDVR(t::AbstractVector{T},order::Integer) where T = FEDVR(t, Fill(order,length(t)-1))
 
 axes(B::FEDVR) = (first(B.t)..last(B.t), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
+
+# * Basis functions
 
 function getindex(B::FEDVR{T}, x::Real, i::Integer, m::Integer) where T
     (x < B.t[i] || x > B.t[i+1]) && return zero(T)
@@ -101,7 +106,7 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     B[x,i,m]
 end
 
-## Mass matrix
+# * Mass matrix
 function materialize(M::Mul2{<:Any,<:Any,<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDVR{T}}) where T
     Ac, B = M.factors
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
@@ -109,6 +114,187 @@ function materialize(M::Mul2{<:Any,<:Any,<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDV
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
     Diagonal(ones(T, size(A,2)))
 end
+
+# * Dense operators
+
+function Matrix(::UndefInitializer, B::FEDVR{T}) where T
+    if all(B.order .== 2)
+        n = size(B,2)
+        dl = Vector{T}(undef, n-1)
+        d = Vector{T}(undef, n)
+        du = Vector{T}(undef, n-1)
+        Tridiagonal(dl, d, du)
+    else
+        bs = o -> o > 2 ? [o-2,1] : [1]
+        bw = o -> o > 2 ? [2,1] : [1]
+        rows,l,u = if length(B.order) > 1
+            rows = Vector{Int}(vcat(B.order[1]-1,1,
+                                    vcat([bs(B.order[i]) for i = 2:length(B.order)-1]...),
+                                    B.order[end]-1))
+            l = vcat(1,[bw(B.order[i]) for i = 2:length(B.order)]...)
+            u = vcat(1,[reverse(bw(B.order[i])) for i = 1:length(B.order)-1]...,1)
+            rows,l,u
+        else
+            [B.order[1]],[0],[0]
+        end
+
+        BlockSkylineMatrix{T}(undef, (rows,rows), (l,u))
+    end
+end
+
+function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where T
+    nel = length(B.order)
+
+    A.data .= zero(T)
+
+    j = 1
+    for i in eachindex(B.order)
+        b = fun(i)
+        o = B.order[i]
+        @assert size(b,1) == size(b,2) == o
+
+        s = 1+(i>1)
+        e = size(b,1)-(i<nel)
+
+        if o > 2
+            j += 1
+            A[Block(j,j)] .= b[s:e,s:e]
+            if i < nel
+                A[Block(j+1,j+1)] .+= b[end,end]
+                A[Block(j,j+1)] = b[s:e,end]
+                A[Block(j+1,j)] = reshape(b[end,s:e], 1, e-s+1)
+            end
+            if i > 1
+                A[Block(j-1,j-1)] .+= b[1,1]
+                A[Block(j,j-1)] = b[s:e,1]
+                A[Block(j-1,j)] = reshape(b[1,s:e], 1, e-s+1)
+            end
+            if i > 1 && i < nel
+                A[Block(j-1,j+1)] = b[1,end]
+                A[Block(j+1,j-1)] = b[end,1]
+            end
+        else
+            A[Block(j,j)] .+= b[1,1]
+            A[Block(j+1,j)] .= b[2,1]
+            A[Block(j,j+1)] .= b[1,2]
+            A[Block(j+1,j+1)] .+= b[2,2]
+        end
+
+        j += 1
+    end
+end
+
+# * Scalar operators
+
+Matrix(f::Function, B::FEDVR{T}) where T = Diagonal(f.(B.x))
+Matrix(::UniformScaling, B::FEDVR{T}) where T = Diagonal(ones(T, size(B,2)))
+
+
+# * Derivatives
+
+"""
+    lagrangeder!(xⁱ, m, L′)
+
+Calculate the derivative of the Lagrange interpolating polynomial
+Lⁱₘ(x), given the roots `xⁱ`, *at* the roots, and storing the result
+in `L′`.
+
+∂ₓ Lⁱₘ(xⁱₘ,) = (xⁱₘ-xⁱₘ,)⁻¹ ∏(k≠m,m′) (xⁱₘ,-xⁱₖ)/(xⁱₘ-xⁱₖ), m≠m′,
+                [δ(m,n) - δ(m,1)]/2wⁱₘ,                    m=m′
+
+Eq. (20) Rescigno2000
+"""
+function lagrangeder!(xⁱ::AbstractVector, wⁱ::AbstractVector,
+                      L′::AbstractMatrix)
+    δ(a,b) = a == b ? 1 : 0
+    n = length(xⁱ)
+    for m in 1:n
+        L′[m,m] = (δ(m,n)-δ(m,1))/2wⁱ[m]
+        for m′ in 1:n
+            m′ == m && continue
+            f = 1
+            for k = 1:n
+                k in [m,m′] && continue
+                f *= (xⁱ[m′]-xⁱ[k])/(xⁱ[m]-xⁱ[k])
+            end
+            L′[m,m′] = f/(xⁱ[m]-xⁱ[m′])
+        end
+    end
+end
+
+function diff!(D, L̃, L′, wⁱ, nⁱ)
+    n = size(L′,1)
+    for m = 1:n
+        for m′ = 1:n
+            D[m,m′] = nⁱ[m]*nⁱ[m′]*dot(L̃[m,:],wⁱ.*L′[m′,:])
+        end
+    end
+    D
+end
+
+function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
+    o = B.order[i]
+
+    # L′ contains derivatives of un-normalized basis functions at
+    # the quadrature roots.
+    L′ = Matrix{T}(undef, o, o)
+    lagrangeder!(B.xⁱ[i], B.wⁱ[i],L′)
+
+    # D contains ⟨ξᵢ|χⱼ′⟩ where ξᵢ = χᵢ⁽ⁿ⁻¹⁾
+    D = similar(L′)
+    L̃ = n == 1 ? Matrix{T}(I, size(L′)...) : -L′ # ∂ᴴ = -∂
+    diff!(D, L̃, L′, B.wⁱ[i], B.nⁱ[i])
+    D
+end
+
+derop!(A::BlockSkylineMatrix{T}, B::FEDVR{T}, n::Integer) where T =
+    set_blocks!(i -> diff(B,n,i), A, B)
+
+function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
+    nel = length(B.order)
+
+    A.dl .= zero(T)
+    A.d .= zero(T)
+    A.du .= zero(T)
+
+    for i in eachindex(B.order)
+        b = diff(B,n,i)
+        A.dl[i] = b[2,1]
+        A.d[i:i+1] .+= diag(b)
+        A.du[i] = b[1,2]
+    end
+end
+
+const FirstDerivative{T} = Mul2{<:Any,<:Any,<:Derivative,<:FEDVR{T}}
+const SecondDerivative{T} = Mul{<:Tuple{<:Any,<:Any,<:Any},<:Tuple{<:QuasiAdjoint{T,<:Derivative{T}},<:Derivative{T},<:FEDVR{T}}}
+
+const FirstOrSecondDerivative{T} = Union{FirstDerivative{T},SecondDerivative{T}}
+
+order(::FirstDerivative) = 1
+order(::SecondDerivative) = 2
+
+function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR{T}},
+                 M::FirstOrSecondDerivative{T}) where T
+    S = last(M.factors)
+    S′, A = dest.factors
+    x = S′.t
+
+    derop!(A, S, order(M))
+    display(A)
+
+    axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
+    S == S′ || throw(ArgumentError("Cannot multiply incompatible FEDVRs"))
+
+    dest
+end
+
+function similar(M::FirstOrSecondDerivative{T}, ::Type{T}) where T
+    B = last(M.factors)
+    Mul(B, Matrix(undef, B))
+end
+
+materialize(M::FirstOrSecondDerivative{T}) where T =
+    copyto!(similar(M, eltype(M)), M)
 
 export FEDVR
 
