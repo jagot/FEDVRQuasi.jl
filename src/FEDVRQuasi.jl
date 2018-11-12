@@ -27,38 +27,40 @@ lerp(a::C,b::C,t::R) where {R<:Real,C<:Complex} = lerp(real(a),real(b),t) + im*l
 
 function element_grid(order, a::T, b::T, c::T=zero(T), eiϕ=one(T)) where T
     x,w = gausslobatto(order)
-    c .+ lerp.(Ref(eiϕ*(a-c)), Ref(eiϕ*(b-c)), (x .+ 1)/2),eiϕ*(b-a)*w/2
+    c .+ lerp.(Ref(eiϕ*(a-c)), Ref(eiϕ*(b-c)), (x .+ 1)/2),(b-a)*w/2
 end
 
 
 struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
     t::AbstractVector{R}
+    order::O
+    i₀::Integer
     t₀::R
     eiϕ::T
-    order::O
     x::Vector{T}
     xⁱ::Vector{<:SubArray{T}}
-    wⁱ::Vector{Vector{T}}
+    wⁱ::Vector{Vector{R}}
     n::Vector{T}
     nⁱ::Vector{<:SubArray{T}}
-    function FEDVR(t::AbstractVector{T}, order::O; t₀::T=zero(T), ϕ::T=zero(T)) where {T,O<:AbstractVector}
+    function FEDVR(t::AbstractVector{R}, order::O; t₀::R=zero(R), ϕ::R=zero(R)) where {R<:Real,O<:AbstractVector}
         @assert length(order) == length(t)-1
         @assert all(order .> 1)
 
-        i₀,eiϕ,C = if ϕ ≠ zero(T)
-            findfirst(tt -> tt ≥ t₀, t),exp(im*ϕ),complex(T)
+        i₀,eiϕ,T = if ϕ ≠ zero(R)
+            findfirst(tt -> tt ≥ t₀, t),exp(im*ϕ),complex(R)
         else
-            1,one(T),T
+            1,one(R),R
         end
         i₀ === nothing && error("Complex scaling starting point outside grid $(t)")
         t₀ = t[i₀]
 
-        x,w = zip([element_grid(order[i], t[i], t[i+1], t₀, i ≥ i₀ ? eiϕ : one(C))
+        x,w = zip([element_grid(order[i], t[i], t[i+1], t₀, i ≥ i₀ ? eiϕ : one(T))
                    for i in eachindex(order)]...)
 
-        n = [one(T) ./ .√(wⁱ) for wⁱ in w]
+        rot = (i,v) -> i ≥ i₀ ? eiϕ*v : v
+        n = [one(T) ./ .√(rot(i,wⁱ)) for (i,wⁱ) in enumerate(w)]
         for i in 1:length(order)-1
-            n[i][end] = n[i+1][1] = one(T) ./ √(w[i][end]+w[i+1][1])
+            n[i][end] = n[i+1][1] = one(T) ./ √(rot(i,w[i][end]) + rot(i+1,w[i+1][1]))
         end
 
         X = vcat(x[1], [x[i][2:end] for i in 2:length(order)]...)
@@ -74,7 +76,7 @@ struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
             push!(nⁱ, @view(N[l:l′]))
             l = l′
         end
-        new{C,T,O}(t,t₀,eiϕ,order,X,xⁱ,[w...],N,nⁱ)
+        new{T,R,O}(t,order,i₀,t₀,eiϕ,X,xⁱ,[w...],N,nⁱ)
     end
 end
 
@@ -278,6 +280,7 @@ function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
     D = similar(L′)
     L̃ = n == 1 ? Matrix{T}(I, size(L′)...) : -L′ # ∂ᴴ = -∂
     diff!(D, L̃, L′, B.wⁱ[i], B.nⁱ[i])
+    i ≥ B.i₀ && (D ./= √(B.eiϕ)) # TODO Check if correct
     D
 end
 
