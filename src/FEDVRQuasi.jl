@@ -18,6 +18,7 @@ import LinearAlgebra: Matrix
 
 using FastGaussQuadrature, BlockBandedMatrices
 
+using Printf
 
 # https://github.com/JuliaLang/julia/pull/18777
 lerp(a::T,b::T,t) where T = T(fma(t, b, fma(-t, a, a)))
@@ -93,12 +94,8 @@ complex_rotate(x,B::FEDVR{T}) where {T<:Complex} = x < B.t₀ ? x : B.t₀ + (x-
 function show(io::IO, B::FEDVR{T}) where T
     write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1))")
     if T <: Complex
-        rot = "$(rad2deg(angle(B.eiϕ)))°"
-        if B.t₀ <= first(B.t)
-            write(io, " with ICS @ $rot")
-        else
-            write(io, " with ECS @ $rot starting at $(B.t₀)")
-        end
+        rot = @printf(" with %s @ %.2f°", B.t₀ <= first(B.t) ? "ICS" : "ECS", rad2deg(angle(B.eiϕ)))
+        B.t₀ > first(B.t) && @printf(io, " starting at %.2g", B.t₀)
     end
 end
 
