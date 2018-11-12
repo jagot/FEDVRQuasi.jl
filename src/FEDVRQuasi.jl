@@ -193,7 +193,7 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where
         e = size(b,1)-(i<nel)
 
         if o > 2
-            j += 1
+            j += i > 1
             A[Block(j,j)] .= b[s:e,s:e]
             if i < nel
                 A[Block(j+1,j+1)] .+= b[end,end]
@@ -218,6 +218,7 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where
 
         j += 1
     end
+    A
 end
 
 # * Scalar operators
@@ -300,6 +301,8 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
         A.d[i:i+1] .+= diag(b)
         A.du[i] = b[1,2]
     end
+
+    A
 end
 
 const FirstDerivative{T} = Mul2{<:Any,<:Any,<:Derivative,<:FEDVR{T}}
