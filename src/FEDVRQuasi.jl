@@ -1,6 +1,6 @@
 module FEDVRQuasi
 
-import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff
+import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff, show
 import Base.Broadcast: materialize
 
 using ContinuumArrays
@@ -20,26 +20,38 @@ using FastGaussQuadrature, BlockBandedMatrices
 
 # https://github.com/JuliaLang/julia/pull/18777
 lerp(a::T,b::T,t) where T = T(fma(t, b, fma(-t, a, a)))
+lerp(a::R,b::R,t::C) where {R<:Real,C<:Complex} = lerp(a,b,real(t)) + im*lerp(a,b,imag(t))
+lerp(a::C,b::C,t::R) where {R<:Real,C<:Complex} = lerp(real(a),real(b),t) + im*lerp(imag(a),imag(b),(t))
 
-function element_grid(order, a::T, b::T) where T
+function element_grid(order, a::T, b::T, c::T=zero(T), eiϕ=one(T)) where T
     x,w = gausslobatto(order)
-    lerp.(Ref(a),Ref(b), (x .+ 1)/2),(b-a)*w/2
+    c .+ lerp.(Ref(eiϕ*(a-c)), Ref(eiϕ*(b-c)), (x .+ 1)/2),eiϕ*(b-a)*w/2
 end
 
 
-struct FEDVR{T,O<:AbstractVector} <: AbstractQuasiMatrix{T}
-    t::AbstractVector{T}
+struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
+    t::AbstractVector{R}
+    t₀::R
+    eiϕ::T
     order::O
     x::Vector{T}
     xⁱ::Vector{<:SubArray{T}}
     wⁱ::Vector{Vector{T}}
     n::Vector{T}
     nⁱ::Vector{<:SubArray{T}}
-    function FEDVR(t::AbstractVector{T}, order::O) where {T,O<:AbstractVector}
+    function FEDVR(t::AbstractVector{T}, order::O; t₀::T=zero(T), ϕ::T=zero(T)) where {T,O<:AbstractVector}
         @assert length(order) == length(t)-1
         @assert all(order .> 1)
 
-        x,w = zip([element_grid(order[i], t[i], t[i+1])
+        i₀,eiϕ,C = if ϕ ≠ zero(T)
+            findfirst(tt -> tt ≥ t₀, t),exp(im*ϕ),complex(T)
+        else
+            1,one(T),T
+        end
+        i₀ === nothing && error("Complex scaling starting point outside grid $(t)")
+        t₀ = t[i₀]
+
+        x,w = zip([element_grid(order[i], t[i], t[i+1], t₀, i ≥ i₀ ? eiϕ : one(C))
                    for i in eachindex(order)]...)
 
         n = [one(T) ./ .√(wⁱ) for wⁱ in w]
@@ -60,15 +72,35 @@ struct FEDVR{T,O<:AbstractVector} <: AbstractQuasiMatrix{T}
             push!(nⁱ, @view(N[l:l′]))
             l = l′
         end
-        new{T,O}(t,order,X,xⁱ,[w...],N,nⁱ)
+        new{C,T,O}(t,t₀,eiϕ,order,X,xⁱ,[w...],N,nⁱ)
     end
 end
 
-FEDVR(t::AbstractVector{T},order::Integer) where T = FEDVR(t, Fill(order,length(t)-1))
+FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
+    FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
 axes(B::FEDVR) = (first(B.t)..last(B.t), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
+
+nel(B::FEDVR) = length(B.order)
+element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
+
+complex_rotate(x,B::FEDVR{T}) where {T<:Real} = x
+complex_rotate(x,B::FEDVR{T}) where {T<:Complex} = x < B.t₀ ? x : B.t₀ + (x-B.t₀)*B.eiϕ
+
+function show(io::IO, B::FEDVR{T}) where T
+    write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1))")
+    if T <: Complex
+        rot = "$(rad2deg(angle(B.eiϕ)))°"
+        if B.t₀ <= first(B.t)
+            write(io, " with ICS @ $rot")
+        else
+            write(io, " with ECS @ $rot starting at $(B.t₀)")
+        end
+    end
+end
+
 
 # * Basis functions
 
@@ -76,9 +108,10 @@ function getindex(B::FEDVR{T}, x::Real, i::Integer, m::Integer) where T
     (x < B.t[i] || x > B.t[i+1]) && return zero(T)
     xⁱ = B.xⁱ[i]
     χ = B.nⁱ[i][m]
+    x′ = complex_rotate(x, B)
     for j = 1:B.order[i]
         j == m && continue
-        χ *= (x - xⁱ[j])/(xⁱ[m]-xⁱ[j])
+        χ *= (x′ - xⁱ[j])/(xⁱ[m]-xⁱ[j])
     end
     χ
 end
