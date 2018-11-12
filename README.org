@@ -5,3 +5,10 @@
 Implementation of the finite-element, discrete-variable representation
 method using the [[https://github.com/JuliaApproximation/ContinuumArrays.jl][ContinuumArrays.jl]] approach. It is intended that this
 approach will eventually replace the one in [[https://github.com/jagot/FEDVR.jl][FEDVR.jl]].
+
+TODO:
+- [-] Fix derivatives
+  - [X] Bandwidths
+  - [ ] Incompatible axes
+  - [ ] Ensure complex scaling is correct for derivatives
+- [ ] Boundary conditions (removing first/last basis function)

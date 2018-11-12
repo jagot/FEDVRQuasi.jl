@@ -18,6 +18,7 @@ import LinearAlgebra: Matrix
 
 using FastGaussQuadrature, BlockBandedMatrices
 
+
 # https://github.com/JuliaLang/julia/pull/18777
 lerp(a::T,b::T,t) where T = T(fma(t, b, fma(-t, a, a)))
 lerp(a::R,b::R,t::C) where {R<:Real,C<:Complex} = lerp(a,b,real(t)) + im*lerp(a,b,imag(t))
@@ -164,8 +165,11 @@ function Matrix(::UndefInitializer, B::FEDVR{T}) where T
             rows = Vector{Int}(vcat(B.order[1]-1,1,
                                     vcat([bs(B.order[i]) for i = 2:length(B.order)-1]...),
                                     B.order[end]-1))
-            l = vcat(1,[bw(B.order[i]) for i = 2:length(B.order)]...)
-            u = vcat(1,[reverse(bw(B.order[i])) for i = 1:length(B.order)-1]...,1)
+            bws = bw.(B.order)
+            l = vcat(1,bws[2:end]...)
+            u = vcat(reverse.(bws[1:end-1])...,1)
+            length(l) < length(rows) && (l = vcat(l,0))
+            length(u) < length(rows) && (u = vcat(0,u))
             rows,l,u
         else
             [B.order[1]],[0],[0]
