@@ -305,16 +305,15 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
     A
 end
 
-const FirstDerivative{T} = Mul2{<:Any,<:Any,<:Derivative,<:FEDVR{T}}
-const SecondDerivative{T} = Mul{<:Tuple{<:Any,<:Any,<:Any},<:Tuple{<:QuasiAdjoint{T,<:Derivative{T}},<:Derivative{T},<:FEDVR{T}}}
-
-const FirstOrSecondDerivative{T} = Union{FirstDerivative{T},SecondDerivative{T}}
+const FirstDerivative = Mul2{<:Any,<:Any,<:Derivative,<:FEDVR}
+const SecondDerivative = Mul{<:Tuple{<:Any,<:Any,<:Any},<:Tuple{<:QuasiAdjoint{<:Any,<:Derivative},<:Derivative,<:FEDVR}}
+const FirstOrSecondDerivative = Union{FirstDerivative,SecondDerivative}
 
 order(::FirstDerivative) = 1
 order(::SecondDerivative) = 2
 
-function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR{T}},
-                 M::FirstOrSecondDerivative{T}) where T
+function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR},
+                 M::FirstOrSecondDerivative)
     S = last(M.factors)
     S′, A = dest.factors
     x = S′.t
@@ -327,12 +326,12 @@ function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR{T}},
     dest
 end
 
-function similar(M::FirstOrSecondDerivative{T}, ::Type{T}) where T
+function similar(M::FirstOrSecondDerivative, ::Type{T}) where T
     B = last(M.factors)
     Mul(B, Matrix(undef, B))
 end
 
-materialize(M::FirstOrSecondDerivative{T}) where T =
+materialize(M::FirstOrSecondDerivative) =
     copyto!(similar(M, eltype(M)), M)
 
 export FEDVR

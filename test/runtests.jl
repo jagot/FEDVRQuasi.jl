@@ -1,4 +1,9 @@
-using FEDVRQuasi, LinearAlgebra, BlockBandedMatrices
+using FEDVRQuasi
+import FEDVRQuasi: FirstDerivative, SecondDerivative
+using ContinuumArrays
+using LinearAlgebra
+using BlockBandedMatrices
+using LazyArrays
 using Test
 
 function test_block_structure(t, o, l, u)
@@ -59,4 +64,42 @@ end
             i*ones(o[i],o[i])
         end
     end
+end
+
+@testset "Lazy derivatives" begin
+    for (t₀,ϕ) in [(1.0,0.0), (4.0,π/3)]
+        B = FEDVR(1.0:7, 4, t₀=t₀, ϕ=ϕ)
+        D = Derivative(axes(B,1))
+
+        DB = Mul(D,B)
+        DDB = Mul(D',D,B)
+
+        # This should hold, regardless of whether complex scaling is
+        # employed or not.
+        @test DB isa FirstDerivative
+        @test DDB isa SecondDerivative
+
+        @test B'DB == B'*D*B
+        @test B'DDB == B'*D' *D*B
+    end
+end
+
+@testset "Materialize derivatives" begin
+    B = FEDVR(1.0:7, 4)
+    D = Derivative(axes(B,1))
+
+    ∇ = B'*D*B
+    ∇² = B'D'D*B
+
+    A′ = Matrix(undef, B)
+    A′′ = Matrix(undef, B)
+
+    FEDVRQuasi.derop!(A′, B, 1)
+    FEDVRQuasi.derop!(A′′, B, 2)
+
+    @test ∇ isa BlockSkylineMatrix
+    @test ∇² isa BlockSkylineMatrix
+
+    @test ∇ == A′
+    @test ∇² == A′′
 end
