@@ -319,11 +319,10 @@ function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR{T}},
     S′, A = dest.factors
     x = S′.t
 
-    derop!(A, S, order(M))
-    display(A)
-
     axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
     S == S′ || throw(ArgumentError("Cannot multiply incompatible FEDVRs"))
+
+    derop!(A, S, order(M))
 
     dest
 end
