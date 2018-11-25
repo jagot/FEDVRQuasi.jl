@@ -101,6 +101,17 @@ function show(io::IO, B::FEDVR{T}) where T
     end
 end
 
+function block_structure(B::FEDVR)
+    if length(B.order) > 1
+        bs = o -> o > 2 ? [o-2,1] : [1]
+        Vector{Int}(vcat(B.order[1]-1,1,
+                         vcat([bs(B.order[i]) for i = 2:length(B.order)-1]...),
+                         B.order[end]-1))
+    else
+        [B.order[1]]
+    end
+end
+
 
 # * Basis functions
 
@@ -158,20 +169,17 @@ function Matrix(::UndefInitializer, B::FEDVR{T}) where T
         du = Vector{T}(undef, n-1)
         Tridiagonal(dl, d, du)
     else
-        bs = o -> o > 2 ? [o-2,1] : [1]
         bw = o -> o > 2 ? [2,1] : [1]
-        rows,l,u = if length(B.order) > 1
-            rows = Vector{Int}(vcat(B.order[1]-1,1,
-                                    vcat([bs(B.order[i]) for i = 2:length(B.order)-1]...),
-                                    B.order[end]-1))
+        rows = block_structure(B)
+        l,u = if length(B.order) > 1
             bws = bw.(B.order)
             l = vcat(1,bws[2:end]...)
             u = vcat(reverse.(bws[1:end-1])...,1)
             length(l) < length(rows) && (l = vcat(l,0))
             length(u) < length(rows) && (u = vcat(0,u))
-            rows,l,u
+            l,u
         else
-            [B.order[1]],[0],[0]
+            [0],[0]
         end
 
         BlockSkylineMatrix{T}(undef, (rows,rows), (l,u))
