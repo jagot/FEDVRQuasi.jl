@@ -150,13 +150,26 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     B[x,i,m]
 end
 
+# * Diagonal matrices
+DiagonalBlockDiagonal(A::AbstractMatrix, (rows,cols)::Tuple) =
+    BandedBlockBandedMatrix(A, (rows,cols), (0,0), (0,0))
+
+DiagonalBlockDiagonal(A::AbstractMatrix, rows) =
+    DiagonalBlockDiagonal(A, (rows,rows))
+
+function (B::FEDVR)(D::Diagonal)
+    n = size(B,2)
+    @assert size(D) == (n,n)
+    DiagonalBlockDiagonal(D, block_structure(B))
+end
+
 # * Mass matrix
 function materialize(M::Mul2{<:Any,<:Any,<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDVR{T}}) where T
     Ac, B = M.factors
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-    Diagonal(ones(T, size(A,2)))
+    B(Diagonal(ones(T, size(A,2))))
 end
 
 # * Dense operators
@@ -231,8 +244,8 @@ end
 
 # * Scalar operators
 
-Matrix(f::Function, B::FEDVR{T}) where T = Diagonal(f.(B.x))
-Matrix(::UniformScaling, B::FEDVR{T}) where T = Diagonal(ones(T, size(B,2)))
+Matrix(f::Function, B::FEDVR{T}) where T = B(Diagonal(f.(B.x)))
+Matrix(::UniformScaling, B::FEDVR{T}) where T = B(Diagonal(ones(T, size(B,2))))
 
 
 # * Derivatives
