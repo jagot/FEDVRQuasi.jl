@@ -76,11 +76,11 @@ end
 
         # This should hold, regardless of whether complex scaling is
         # employed or not.
-        @test DB isa FirstDerivative
-        @test DDB isa SecondDerivative
+        @test Mul(B',DB) isa FirstDerivative
+        @test Mul(B',DDB) isa SecondDerivative
 
         @test B'DB == B'*D*B
-        @test B'DDB == B'*D' *D*B
+        @test B'DDB == B'*D'*D*B
     end
 end
 

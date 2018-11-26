@@ -331,34 +331,21 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
     A
 end
 
-const FirstDerivative = Mul2{<:Any,<:Any,<:Derivative,<:FEDVR}
-const SecondDerivative = Mul{<:Tuple{<:Any,<:Any,<:Any},<:Tuple{<:QuasiAdjoint{<:Any,<:Derivative},<:Derivative,<:FEDVR}}
+const FirstDerivative = Mul{<:Tuple,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR},<:Derivative,<:FEDVR}}
+const SecondDerivative = Mul{<:Tuple,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR},<:QuasiAdjoint{<:Any,<:Derivative},<:Derivative,<:FEDVR}}
 const FirstOrSecondDerivative = Union{FirstDerivative,SecondDerivative}
 
-order(::FirstDerivative) = 1
-order(::SecondDerivative) = 2
+difforder(::FirstDerivative) = 1
+difforder(::SecondDerivative) = 2
 
-function copyto!(dest::Mul2{<:Any,<:Any,<:FEDVR},
-                 M::FirstOrSecondDerivative)
-    S = last(M.factors)
-    S′, A = dest.factors
-    x = S′.t
-
+function copyto!(dest::AbstractMatrix, M::FirstOrSecondDerivative)
     axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
-    S == S′ || throw(ArgumentError("Cannot multiply incompatible FEDVRs"))
-
-    derop!(A, S, order(M))
-
+    derop!(dest, last(M.factors), difforder(M))
     dest
 end
 
-function similar(M::FirstOrSecondDerivative, ::Type{T}) where T
-    B = last(M.factors)
-    Mul(B, Matrix(undef, B))
-end
-
-materialize(M::FirstOrSecondDerivative) =
-    copyto!(similar(M, eltype(M)), M)
+similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
+materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
 export FEDVR
 
