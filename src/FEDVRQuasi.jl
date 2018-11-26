@@ -112,6 +112,21 @@ function block_structure(B::FEDVR)
     end
 end
 
+function block_bandwidths(B::FEDVR, rows::Vector{<:Integer})
+    nrows = length(rows)
+    if nrows > 1
+        bw = o -> o > 2 ? [2,1] : [1]
+        bws = bw.(B.order)
+        l = vcat(1,bws[2:end]...)
+        u = vcat(reverse.(bws[1:end-1])...,1)
+        length(l) < nrows && (l = vcat(l,0))
+        length(u) < nrows && (u = vcat(0,u))
+        l,u
+    else
+        [0],[0]
+    end
+end
+
 
 # * Basis functions
 
@@ -182,18 +197,8 @@ function Matrix(::UndefInitializer, B::FEDVR{T}) where T
         du = Vector{T}(undef, n-1)
         Tridiagonal(dl, d, du)
     else
-        bw = o -> o > 2 ? [2,1] : [1]
         rows = block_structure(B)
-        l,u = if length(B.order) > 1
-            bws = bw.(B.order)
-            l = vcat(1,bws[2:end]...)
-            u = vcat(reverse.(bws[1:end-1])...,1)
-            length(l) < length(rows) && (l = vcat(l,0))
-            length(u) < length(rows) && (u = vcat(0,u))
-            l,u
-        else
-            [0],[0]
-        end
+        l,u = block_bandwidths(B,rows)
 
         BlockSkylineMatrix{T}(undef, (rows,rows), (l,u))
     end
