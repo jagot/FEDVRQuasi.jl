@@ -7,6 +7,14 @@ using LazyArrays
 import LazyArrays: ⋆
 using Test
 
+@testset "Element access" begin
+    B = FEDVR(range(0,stop=20,length=71), 10)
+    @test first(@elem(B, x, 1)) == 0
+    @test last(@elem(B, x, 1)) == first(@elem(B, x, 2))
+    @test last(@elem(B, x, 69)) == first(@elem(B, x, 70))
+    @test_throws BoundsError @elem(B, x, 71)
+end
+
 function test_block_structure(t, o, l, u)
     B = FEDVR(t, o)
     M = Matrix(undef, B)

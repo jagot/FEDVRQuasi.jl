@@ -38,10 +38,9 @@ struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
     t₀::R
     eiϕ::T
     x::Vector{T}
-    xⁱ::Vector{<:SubArray{T}}
     wⁱ::Vector{Vector{R}}
     n::Vector{T}
-    nⁱ::Vector{<:SubArray{T}}
+    elems::Vector{UnitRange}
     function FEDVR(t::AbstractVector{R}, order::O; t₀::R=zero(R), ϕ::R=zero(R)) where {R<:Real,O<:AbstractVector}
         @assert length(order) == length(t)-1
         @assert all(order .> 1)
@@ -54,8 +53,13 @@ struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
         i₀ === nothing && error("Complex scaling starting point outside grid $(t)")
         t₀ = t[i₀]
 
-        x,w = zip([element_grid(order[i], t[i], t[i+1], t₀, i ≥ i₀ ? eiϕ : one(T))
-                   for i in eachindex(order)]...)
+        x = Vector{Vector{T}}()
+        w = Vector{Vector{T}}()
+        for i in eachindex(order)
+            xw = element_grid(order[i], t[i], t[i+1], t₀, i ≥ i₀ ? eiϕ : one(T))
+            push!(x, xw[1])
+            push!(w, xw[2])
+        end
 
         rot = (i,v) -> i ≥ i₀ ? eiϕ*v : v
         n = [one(T) ./ .√(rot(i,wⁱ)) for (i,wⁱ) in enumerate(w)]
@@ -66,17 +70,16 @@ struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
         X = vcat(x[1], [x[i][2:end] for i in 2:length(order)]...)
         N = vcat(n[1], [n[i][2:end] for i in 2:length(order)]...)
 
-        xⁱ = [@view(X[1:order[1]])]
-        nⁱ = [@view(N[1:order[1]])]
+        elems = [1:order[1]]
 
         l = order[1]
         for i = 2:length(order)
             l′ = l+order[i]-1
-            push!(xⁱ, @view(X[l:l′]))
-            push!(nⁱ, @view(N[l:l′]))
+            push!(elems, l:l′)
             l = l′
         end
-        new{T,R,O}(t,order,i₀,t₀,eiϕ,X,xⁱ,[w...],N,nⁱ)
+
+        new{T,R,O}(t,order,i₀,t₀,eiϕ,X,[w...],N,elems)
     end
 end
 
@@ -92,6 +95,10 @@ element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
 
 complex_rotate(x,B::FEDVR{T}) where {T<:Real} = x
 complex_rotate(x,B::FEDVR{T}) where {T<:Complex} = x < B.t₀ ? x : B.t₀ + (x-B.t₀)*B.eiϕ
+
+macro elem(B,v,i)
+    :(@view($(esc(B)).$v[$(esc(B)).elems[$(esc(i))]]))
+end
 
 function show(io::IO, B::FEDVR{T}) where T
     write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1))")
@@ -132,8 +139,8 @@ end
 
 function getindex(B::FEDVR{T}, x::Real, i::Integer, m::Integer) where T
     (x < B.t[i] || x > B.t[i+1]) && return zero(T)
-    xⁱ = B.xⁱ[i]
-    χ = B.nⁱ[i][m]
+    xⁱ = @elem(B,x,i)
+    χ = @elem(B,n,i)[m]
     x′ = complex_rotate(x, B)
     for j = 1:B.order[i]
         j == m && continue
@@ -301,12 +308,12 @@ function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
     # L′ contains derivatives of un-normalized basis functions at
     # the quadrature roots.
     L′ = Matrix{T}(undef, o, o)
-    lagrangeder!(B.xⁱ[i], B.wⁱ[i],L′)
+    lagrangeder!(@elem(B,x,i), B.wⁱ[i],L′)
 
     # D contains ⟨ξᵢ|χⱼ′⟩ where ξᵢ = χᵢ⁽ⁿ⁻¹⁾
     D = similar(L′)
     L̃ = n == 1 ? Matrix{T}(I, size(L′)...) : -L′ # ∂ᴴ = -∂
-    diff!(D, L̃, L′, B.wⁱ[i], B.nⁱ[i])
+    diff!(D, L̃, L′, B.wⁱ[i], @elem(B,n,i))
     i ≥ B.i₀ && (D ./= √(B.eiϕ)) # TODO Check if correct
     D
 end
@@ -347,6 +354,6 @@ end
 similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
-export FEDVR, Derivative
+export FEDVR, Derivative, @elem
 
 end # module
