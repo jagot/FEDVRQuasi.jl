@@ -14,7 +14,7 @@ import LazyArrays: Mul2
 using FillArrays
 
 using LinearAlgebra
-import LinearAlgebra: Matrix
+import LinearAlgebra: Matrix, dot
 
 using FastGaussQuadrature, BlockBandedMatrices
 
@@ -354,6 +354,17 @@ end
 similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
-export FEDVR, Derivative, @elem
+# * Projections
+
+function dot(B::FEDVR{T}, f::Function) where T
+    v = zeros(T, size(B,2))
+    for i ∈ 1:nel(B)
+        @. v[B.elems[i]] += B.wⁱ[i]*f(@elem(B,x,i))
+    end
+    v .*= B.n
+    v
+end
+
+export FEDVR, Derivative, @elem, dot
 
 end # module

@@ -147,3 +147,17 @@ end
     @test ∇ == A′
     @test ∇² == A′′
 end
+
+@testset "Projections" begin
+    rₘₐₓ = 20
+    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
+    r = range(0,stop=rₘₐₓ,length=1001)
+    χ = R[r,:]
+
+    fu = r -> r^2*exp(-r)
+    u = dot(R, fu)
+    @test norm(χ*u - fu.(r)) < 1e-6
+    fv = r -> r^6*exp(-r)
+    v = dot(R, fv)
+    @test norm(χ*v - fv.(r)) < 1e-4
+end
