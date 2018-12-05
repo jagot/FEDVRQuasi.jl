@@ -347,6 +347,6 @@ end
 similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
-export FEDVR
+export FEDVR, Derivative
 
 end # module
