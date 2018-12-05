@@ -50,7 +50,7 @@ struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
         else
             1,one(R),R
         end
-        i₀ === nothing && error("Complex scaling starting point outside grid $(t)")
+        i₀ === nothing && throw(ArgumentError("Complex scaling starting point outside grid $(t)"))
         t₀ = t[i₀]
 
         x = Vector{Vector{T}}()
@@ -103,7 +103,7 @@ end
 function show(io::IO, B::FEDVR{T}) where T
     write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1))")
     if T <: Complex
-        rot = @printf(" with %s @ %.2f°", B.t₀ <= first(B.t) ? "ICS" : "ECS", rad2deg(angle(B.eiϕ)))
+        rot = @printf(io, " with %s @ %.2f°", B.t₀ <= first(B.t) ? "ICS" : "ECS", rad2deg(angle(B.eiϕ)))
         B.t₀ > first(B.t) && @printf(io, " starting at %.2g", B.t₀)
     end
 end

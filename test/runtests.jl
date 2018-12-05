@@ -1,11 +1,45 @@
 using FEDVRQuasi
-import FEDVRQuasi: FirstDerivative, SecondDerivative
+import FEDVRQuasi: nel, complex_rotate, FirstDerivative, SecondDerivative
+using IntervalSets
 using ContinuumArrays
+import ContinuumArrays: ℵ₁
 using LinearAlgebra
 using BlockBandedMatrices
 using LazyArrays
 import LazyArrays: ⋆
 using Test
+
+@testset "Simple tests" begin
+    B = FEDVR(range(0,stop=20,length=71), 10)
+    C = FEDVR(range(0,stop=20,length=71), 10)
+
+    @test B == C
+    @test axes(B) == (0..20, 1:631)
+    @test size(B) == (ℵ₁, 631)
+
+    @test nel(B) == 70
+end
+
+@testset "Complex scaling" begin
+    B = FEDVR(range(0,stop=20,length=71), 10)
+    C = FEDVR(range(0,stop=20,length=71), 10, t₀=10.0, ϕ=π/3)
+    @test C.t₀ ≥ 10.0
+    @test_throws ArgumentError FEDVR(range(0,stop=20,length=71), 10, t₀=30.0, ϕ=π/3)
+    @test complex_rotate(5, B) == 5
+    @test complex_rotate(15, B) == 15
+    @test complex_rotate(5, C) == 5
+    @test complex_rotate(15, C) ≈ 10 + 5*exp(im*π/3)
+end
+
+@testset "Pretty printing" begin
+    B = FEDVR(range(0,stop=20,length=71), 10)
+    C = FEDVR(range(0,stop=20,length=71), 10, t₀=10.0, ϕ=π/3)
+    io = IOBuffer()
+    show(io, B)
+    @test occursin("FEDVR{Float64} basis with 70 elements on 0.0..20.0", String(take!(io)))
+    show(io, C)
+    @test occursin("FEDVR{Complex{Float64}} basis with 70 elements on 0.0..20.0 with ECS @ 60.00° starting at 10", String(take!(io)))
+end
 
 @testset "Element access" begin
     B = FEDVR(range(0,stop=20,length=71), 10)
@@ -26,12 +60,13 @@ function test_block_structure(t, o, l, u)
     # TODO Test block sizes
 
     @test all(M.l[1:end-2] .== l[1:end-1])
-    @test M.l[end-1] ≥ l[end]
+    length(l) > 0 && @test M.l[end-1] ≥ l[end]
     @test all(M.u[3:end] .== u[2:end])
-    @test M.u[2] ≥ u[1]
+    length(u) > 0 && @test M.u[2] ≥ u[1]
 end
 
 @testset "Block structure" begin
+    test_block_structure(1.0:2, [4], [], [])
     test_block_structure(1.0:7, [2,2,3,4,2,4], [1,1,2,1,2,1,1,1], [1,1,1,2,1,2,1,1])
     test_block_structure(1.0:8, [2,2,3,4,2,4,2], [1,1,2,1,2,1,1,2,1,1], [1,1,1,2,1,2,1,1,2,1])
     test_block_structure(range(0,1,length=7), 1 .+ (1:6), [1,2,1,2,1,2,1,2,1,1], [1,1,2,1,2,1,2,1,2,1])
