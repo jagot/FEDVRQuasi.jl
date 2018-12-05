@@ -4,6 +4,7 @@ using ContinuumArrays
 using LinearAlgebra
 using BlockBandedMatrices
 using LazyArrays
+import LazyArrays: ⋆
 using Test
 
 function test_block_structure(t, o, l, u)
@@ -71,13 +72,13 @@ end
         B = FEDVR(1.0:7, 4, t₀=t₀, ϕ=ϕ)
         D = Derivative(axes(B,1))
 
-        DB = Mul(D,B)
-        DDB = Mul(D',D,B)
+        DB = D⋆B
+        DDB = D'⋆D⋆B
 
         # This should hold, regardless of whether complex scaling is
         # employed or not.
-        @test Mul(B',DB) isa FirstDerivative
-        @test Mul(B',DDB) isa SecondDerivative
+        @test B'⋆DB isa FirstDerivative
+        @test B'⋆DDB isa SecondDerivative
 
         @test B'DB == B'*D*B
         @test B'DDB == B'*D'*D*B

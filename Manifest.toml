@@ -33,9 +33,9 @@ version = "0.6.0"
 
 [[BlockBandedMatrices]]
 deps = ["BandedMatrices", "BlockArrays", "Distributed", "FillArrays", "LazyArrays", "LinearAlgebra", "Pkg", "Profile", "Random", "SharedArrays", "SparseArrays", "Statistics", "Test"]
-git-tree-sha1 = "91fb4c16507ddcbc2a8d9a78c7c4cdb8148cb7e2"
+git-tree-sha1 = "9afde8e994241a0d51fbea6eb2d5313ac4a6a944"
 uuid = "ffab5731-97b5-5995-9138-79e8c1846df0"
-version = "0.3.0"
+version = "0.3.2"
 
 [[Compat]]
 deps = ["Base64", "Dates", "DelimitedFiles", "Distributed", "InteractiveUtils", "LibGit2", "Libdl", "LinearAlgebra", "Markdown", "Mmap", "Pkg", "Printf", "REPL", "Random", "Serialization", "SharedArrays", "Sockets", "SparseArrays", "Statistics", "Test", "UUIDs", "Unicode"]
@@ -50,8 +50,8 @@ uuid = "8f4d0f93-b110-5947-807f-2305c1781a2d"
 version = "1.1.1"
 
 [[ContinuumArrays]]
-deps = ["BandedMatrices", "DomainSets", "FillArrays", "InfiniteArrays", "InteractiveUtils", "IntervalSets", "LazyArrays", "LinearAlgebra", "Test"]
-git-tree-sha1 = "e2cddbb5466ea839426afd561ef738ea42973310"
+deps = ["BandedMatrices", "DomainSets", "FillArrays", "InfiniteArrays", "IntervalSets", "LazyArrays", "LinearAlgebra", "Test"]
+git-tree-sha1 = "1d4fae5a1fde6de5b0a0e7d8792fb5ae7a7f1851"
 repo-rev = "master"
 repo-url = "https://github.com/JuliaApproximation/ContinuumArrays.jl.git"
 uuid = "abb603bd-c6a4-5c0b-b5d0-50a836a7e82c"
@@ -123,7 +123,7 @@ version = "0.20.0"
 
 [[LazyArrays]]
 deps = ["FillArrays", "LinearAlgebra", "StaticArrays", "Test"]
-git-tree-sha1 = "b3cb094c48c13289cceff0323ee81d841b18c3fb"
+git-tree-sha1 = "282c4d8f504748fcf2530f1f34713c3581093ffc"
 repo-rev = "master"
 repo-url = "https://github.com/JuliaArrays/LazyArrays.jl.git"
 uuid = "5078a376-72f3-5289-bfd5-ec5146d43c02"
