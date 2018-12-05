@@ -153,7 +153,7 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     x ∈ axes(B,1) && 1 ≤ k ≤ size(B,2) || throw(BoundsError())
 
 @inline function getindex(B::FEDVR{T}, x::Real, k::Integer) where T
-    @boundscheck checkbounds(B, x, k) # Slow
+    # @boundscheck checkbounds(B, x, k) # Slow
     i = 1
     m = k
     while i < length(B.order) && m > B.order[i]
