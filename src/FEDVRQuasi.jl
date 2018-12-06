@@ -20,6 +20,8 @@ using FastGaussQuadrature, BlockBandedMatrices
 
 using Printf
 
+# * Gauß–Lobatto grid
+
 # https://github.com/JuliaLang/julia/pull/18777
 lerp(a::T,b::T,t) where T = T(fma(t, b, fma(-t, a, a)))
 lerp(a::R,b::R,t::C) where {R<:Real,C<:Complex} = lerp(a,b,real(t)) + im*lerp(a,b,imag(t))
@@ -30,6 +32,7 @@ function element_grid(order, a::T, b::T, c::T=zero(T), eiϕ=one(T)) where T
     c .+ lerp.(Ref(eiϕ*(a-c)), Ref(eiϕ*(b-c)), (x .+ 1)/2),(b-a)*w/2
 end
 
+# * Basis construction
 
 struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
     t::AbstractVector{R}
@@ -85,6 +88,8 @@ end
 
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
+
+# * Properties
 
 axes(B::FEDVR) = (first(B.t)..last(B.t), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
