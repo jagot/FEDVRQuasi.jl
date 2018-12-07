@@ -5,7 +5,7 @@ import Base.Broadcast: materialize
 
 using ContinuumArrays
 import ContinuumArrays: ℵ₁
-import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint
+import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray
 
 using IntervalSets
 
@@ -359,6 +359,17 @@ end
 similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
+# * Densities
+function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:MulQuasiArray{T,N,<:Mul{<:Tuple,<:Tuple{<:FEDVR,<:AbstractArray{T,N}}}}}
+    axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
+    A,ca = a.mul.factors
+    B,cb = b.mul.factors
+    A == B || throw(DimensionMismatch("Incompatible bases"))
+    c = similar(ca)
+    @. c = ca * cb * A.n
+    A*c
+end
+
 # * Projections
 
 function dot(B::FEDVR{T}, f::Function) where T
@@ -369,6 +380,8 @@ function dot(B::FEDVR{T}, f::Function) where T
     v .*= B.n
     v
 end
+
+# * Exports
 
 export FEDVR, Derivative, @elem, dot
 

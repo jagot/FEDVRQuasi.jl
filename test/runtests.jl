@@ -152,12 +152,30 @@ end
     rₘₐₓ = 20
     R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
     r = range(0,stop=rₘₐₓ,length=1001)
-    χ = R[r,:]
+    χ = R*R[r,:]'
 
     fu = r -> r^2*exp(-r)
-    u = dot(R, fu)
-    @test norm(χ*u - fu.(r)) < 1e-6
+    u = R*dot(R, fu)
+    @test norm(χ'u - fu.(r)) < 1e-6
     fv = r -> r^6*exp(-r)
-    v = dot(R, fv)
-    @test norm(χ*v - fv.(r)) < 1e-4
+    v = R*dot(R, fv)
+    @test norm(χ'v - fv.(r)) < 1e-4
+end
+
+@testset "Densities" begin
+    rₘₐₓ = 20
+    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
+    r = range(0,stop=rₘₐₓ,length=1001)
+    χ = R*R[r,:]'
+
+    fu = r -> r^2*exp(-r)
+    u = R*dot(R, fu)
+
+    fv = r -> r^6*exp(-r)
+    v = R*dot(R, fv)
+
+    w = u .* v
+    fw = r -> fu(r)*fv(r)
+
+    @test norm(χ'w - fw.(r)) < 2e-4
 end
