@@ -3,8 +3,7 @@
 #+EMAIL: stefanos.carlstrom@gmail.com
 
 [[https://travis-ci.org/jagot/FEDVRQuasi.jl][https://travis-ci.org/jagot/FEDVRQuasi.jl.svg?branch=master]]
-#+HTML: <a href="https://ci.appveyor.com/project/jagot/fedvrquasi-jl"><img src="https://ci.appveyor.com/api/projects/status/5xc3x2s1iwvgt0dt?svg=true" alt="Sorry, your browser does not support SVG."/></a>
-
+[[https://ci.appveyor.com/project/jagot/fedvrquasi-jl][https://img.shields.io/appveyor/ci/jagot/fedvrquasi-jl.svg?logo=appveyor]]
 [[https://coveralls.io/github/jagot/FEDVRQuasi.jl?branch=master][https://coveralls.io/repos/github/jagot/FEDVRQuasi.jl/badge.svg?branch=master]]
 [[https://codecov.io/gh/jagot/FEDVRQuasi.jl][https://codecov.io/gh/jagot/FEDVRQuasi.jl/branch/master/graph/badge.svg]]
 
