@@ -10,7 +10,7 @@ import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiA
 using IntervalSets
 
 using LazyArrays
-import LazyArrays: Mul2
+import LazyArrays: ⋆
 using FillArrays
 
 using LinearAlgebra
@@ -176,6 +176,13 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     end
     B[x,i,m]
 end
+
+# * Types
+
+const FEDVRArray{T,N,B<:FEDVR} = MulQuasiArray{T,N,<:Mul{<:Any,<:Tuple{B,<:AbstractArray{T,N}}}}
+const FEDVRVector{T,B<:FEDVR} = FEDVRArray{T,1,B}
+const FEDVRMatrix{T,B<:FEDVR} = FEDVRArray{T,2,B}
+const FEDVRVecOrMat{T,B} = Union{FEDVRVector{T,B},FEDVRMatrix{T,B}}
 
 # * Diagonal matrices
 DiagonalBlockDiagonal(A::AbstractMatrix, (rows,cols)::Tuple) =
@@ -381,6 +388,29 @@ function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVR
     # We want the first MulQuasiArray to be conjugated, if complex
     @. c = conj(ca) * cb * A.n
     A*c
+end
+
+struct FEDVRDensity{T,B<:FEDVR,V<:AbstractVecOrMat{T}}
+    R::B
+    u::V
+    v::V
+end
+
+function Base.Broadcast.broadcasted(::typeof(⋆), a::V, b::V) where {T,B<:FEDVR,V<:FEDVRVecOrMat{T,B}}
+    axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
+    Ra,ca = a.applied.args
+    Rb,cb = b.applied.args
+    Ra == Rb || throw(DimensionMismatch("Incompatible bases"))
+    FEDVRDensity(Ra, ca, cb)
+end
+
+function Base.copyto!(ρ::FEDVRVecOrMat{T,R}, ld::FEDVRDensity{T,R}) where {T,R}
+    Rρ,cρ = ρ.applied.args
+    Rρ == ld.R || throw(DimensionMismatch("Incompatible bases"))
+    size(cρ) == size(ld.u) || throw(DimensionMismatch("Incompatible sizes"))
+    # We want the first MulQuasiArray to be conjugated, if complex
+    @. cρ = conj(ld.u) * ld.v * Rρ.n
+    ρ
 end
 
 # * Projections

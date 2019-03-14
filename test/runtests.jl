@@ -178,4 +178,33 @@ end
     fw = r -> fu(r)*fv(r)
 
     @test norm(χ'w - fw.(r)) < 2e-4
+
+    y = R*rand(ComplexF64, size(R,2))
+    y² = y .* y
+    @test all(isreal.(y².applied.args[2]))
+    @test all(y².applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+
+    @testset "Lazy densities" begin
+        uv = u .⋆ v
+        @test uv isa FEDVRQuasi.FEDVRDensity
+
+        w′ = similar(u)
+        copyto!(w′, uv)
+        @test norm(χ'w′ - fw.(r)) < 2e-4
+
+        uu = R*repeat(u.applied.args[2],1,2)
+        vv = R*repeat(v.applied.args[2],1,2)
+        uuvv = uu .⋆ vv
+        ww′ = similar(uu)
+        copyto!(ww′, uuvv)
+
+        @test norm(χ'ww′ .- fw.(r)) < 2e-4
+
+        yy = y .⋆ y
+        @test yy isa FEDVRQuasi.FEDVRDensity
+        wy = similar(y)
+        copyto!(wy, yy)
+        @test all(isreal.(wy.applied.args[2]))
+        @test all(wy.applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+    end
 end
