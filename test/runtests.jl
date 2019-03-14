@@ -1,5 +1,5 @@
 using FEDVRQuasi
-import FEDVRQuasi: nel, complex_rotate, FirstDerivative, SecondDerivative
+import FEDVRQuasi: nel, complex_rotate
 using IntervalSets
 using ContinuumArrays
 import ContinuumArrays: ℵ₁, Inclusion
@@ -101,6 +101,38 @@ function test_blocks(f::Function, t, o)
     end
 end
 
+@testset "Mass matries" begin
+    t = range(0,stop=20,length=5)
+    @testset "Order 2" begin
+        R = FEDVR(t, 2)
+        R̃ = R[:,2:end-1]
+
+        n = size(R,2)
+
+        d = R'R
+        @test d isa Diagonal
+        @test size(d) == (n,n)
+
+        d̃ = R̃'R̃
+        @test d isa Diagonal
+        @test size(d̃) == (n-2,n-2)
+    end
+    @testset "Higher order" begin
+        R = FEDVR(t, 5)
+        R̃ = R[:,2:end-1]
+
+        n = size(R,2)
+
+        d = R'R
+        @test d isa BandedBlockBandedMatrix
+        @test size(d) == (n,n)
+
+        d̃ = R̃'R̃
+        @test d isa BandedBlockBandedMatrix
+        @test size(d̃) == (n-2,n-2)
+    end
+end
+
 @testset "Set blocks" begin
     test_blocks(1.0:3,[2,3]) do i
         i*ones(i+1,i+1)
@@ -122,6 +154,7 @@ end
 @testset "Lazy derivatives" begin
     for (t₀,ϕ) in [(1.0,0.0), (4.0,π/3)]
         B = FEDVR(1.0:7, 4, t₀=t₀, ϕ=ϕ)
+        B̃ = B[:,2:end-1]
         D = Derivative(axes(B,1))
 
         BD = B'⋆D
@@ -129,8 +162,15 @@ end
 
         # This should hold, regardless of whether complex scaling is
         # employed or not.
-        @test BD⋆B isa FirstDerivative
-        @test BDD⋆B isa SecondDerivative
+        @test BD⋆B isa FEDVRQuasi.FirstDerivative
+        @test BD⋆B isa FEDVRQuasi.LazyFirstDerivative
+        @test BDD⋆B isa FEDVRQuasi.SecondDerivative
+        @test BDD⋆B isa FEDVRQuasi.LazySecondDerivative
+
+        @test B̃' ⋆ D ⋆ B̃ isa FEDVRQuasi.FirstDerivative
+        @test B̃' ⋆ D ⋆ B̃ isa FEDVRQuasi.LazyRestrictedFirstDerivative
+        @test B̃' ⋆ D' ⋆ D ⋆ B̃ isa FEDVRQuasi.SecondDerivative
+        @test B̃' ⋆ D' ⋆ D ⋆ B̃ isa FEDVRQuasi.LazyRestrictedSecondDerivative
 
         @test BD*B == B'*D*B
         @test BDD*B == B'*D'*D*B
@@ -155,6 +195,35 @@ end
 
     @test ∇ == A′
     @test ∇² == A′′
+end
+
+@testset "Derivatives in restricted bases" begin
+    t = range(0,stop=20,length=5)
+    for (order,sel) in [(4,2:12),(4,1:13),([5,4,2,2],5:9),([5,4,3,2],5:10),
+                        (2,2:3),(2,2:4),(2,2:5),(2,1:5)]
+        R = FEDVR(t, order)
+        R̃ = R[:,sel]
+
+        D = Derivative(axes(R̃,1))
+
+        expT = (any(order .> 2) ? BlockSkylineMatrix : Tridiagonal)
+
+        ∇ = R' * D * R
+        ∇̃ = R̃' * D * R̃
+
+        @test ∇ isa expT
+        @test ∇̃ isa expT
+
+        @test Matrix(∇)[sel,sel] == Matrix(∇̃)
+
+        ∇² = R' * D' * D * R
+        ∇̃² = R̃' * D' * D * R̃
+
+        @test ∇² isa expT
+        @test ∇̃² isa expT
+
+        @test Matrix(∇²)[sel,sel] == Matrix(∇̃²)
+    end
 end
 
 @testset "Projections" begin

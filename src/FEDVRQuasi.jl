@@ -22,7 +22,9 @@ using FastGaussQuadrature, BlockBandedMatrices
 
 using Printf
 
-const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, BandedMatrix{<:Int, <:FillArrays.Ones}}}
+const RestrictionMatrix = BandedMatrix{<:Int, <:FillArrays.Ones}
+const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
+const RestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
 
 # * Gauß–Lobatto grid
 
@@ -93,14 +95,20 @@ end
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
+const FEDVROrRestricted = Union{FEDVR,RestrictedQuasiArray{<:Any,2,<:FEDVR}}
+
 # * Properties
 
 axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
-size(B::ApplyQuasiArray{<:Any,2,<:RestrictedBasis{<:FEDVR}}) = (ℵ₁, length(B.applied.args[2].data))
+size(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = (ℵ₁, length(B.applied.args[2].data))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
 
-nel(B::FEDVR) = length(B.order)
+order(B::FEDVR) = B.order
+# This assumes that the restriction matrices do not remove blocks
+order(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = order(B.applied.args[1])
+
+nel(B::FEDVR) = length(order(B))
 element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
 
 complex_rotate(x,B::FEDVR{T}) where {T<:Real} = x
@@ -129,11 +137,29 @@ function block_structure(B::FEDVR)
     end
 end
 
-function block_bandwidths(B::FEDVR, rows::Vector{<:Integer})
+function restriction_extents(restriction::RestrictionMatrix)
+    a = restriction.l
+    b = restriction.raxis.stop - restriction.data.axes[2].stop - a
+    a,b
+end
+
+function block_structure(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
+    B,restriction = B.applied.args
+    bs = block_structure(B)
+    a,b = restriction_extents(restriction)
+
+    a ≤ bs[1] && b ≤ bs[end] ||
+        throw(ArgumentError("Cannot restrict basis beyond first/last block"))
+    bs[1] -= a
+    bs[end] -= b
+    bs
+end
+
+function block_bandwidths(B::Union{FEDVR,RestrictedQuasiArray{<:Any,2,<:FEDVR}}, rows::Vector{<:Integer})
     nrows = length(rows)
     if nrows > 1
         bw = o -> o > 2 ? [2,1] : [1]
-        bws = bw.(B.order)
+        bws = bw.(order(B))
         l = vcat(1,bws[2:end]...)
         u = vcat(reverse.(bws[1:end-1])...,1)
         length(l) < nrows && (l = vcat(l,0))
@@ -204,7 +230,13 @@ DiagonalBlockDiagonal(A::AbstractMatrix, rows) =
 function (B::FEDVR)(D::Diagonal)
     n = size(B,2)
     @assert size(D) == (n,n)
-    DiagonalBlockDiagonal(D, block_structure(B))
+    all(order(B) .== 2) ? D : DiagonalBlockDiagonal(D, block_structure(B))
+end
+
+function (B::RestrictedQuasiArray{<:Any,2,<:FEDVR})(D::Diagonal)
+    n = size(B,2)
+    @assert size(D) == (n,n)
+    all(order(B) .== 2) ? D : DiagonalBlockDiagonal(D, block_structure(B))
 end
 
 # * Mass matrix
@@ -216,10 +248,22 @@ function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FED
     B(Diagonal(ones(T, size(A,2))))
 end
 
+function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},<:QuasiAdjoint{<:Any,<:FEDVR},<:FEDVR{T},<:RestrictionMatrix}}) where T
+    restAc,Ac,B,restB = M.args
+    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
+    restAc' == restB ||
+        throw(ArgumentError("Non-equal restriction matrices not supported"))
+
+    n = size(M,1)
+    (B*restB)(Diagonal(ones(T, n)))
+end
+
 # * Dense operators
 
-function Matrix(::UndefInitializer, B::FEDVR{T}) where T
-    if all(B.order .== 2)
+function Matrix(::UndefInitializer, B::Union{FEDVR{T},RestrictedQuasiArray{T,2,FEDVR{T}}}) where T
+    if all(order(B) .== 2)
         n = size(B,2)
         dl = Vector{T}(undef, n-1)
         d = Vector{T}(undef, n)
@@ -233,6 +277,41 @@ function Matrix(::UndefInitializer, B::FEDVR{T}) where T
     end
 end
 
+function set_block!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}, i, j) where T
+    b = fun(i)
+    o = B.order[i]
+    @assert size(b,1) == size(b,2) == o
+
+    s = 1+(i>1)
+    e = size(b,1)-(i<nel(B))
+
+    if o > 2
+        j += i > 1
+        A[Block(j,j)] .= b[s:e,s:e]
+        if i < nel(B)
+            A[Block(j+1,j+1)] .+= b[end,end]
+            A[Block(j,j+1)] = b[s:e,end]
+            A[Block(j+1,j)] = reshape(b[end,s:e], 1, e-s+1)
+        end
+        if i > 1
+            A[Block(j-1,j-1)] .+= b[1,1]
+            A[Block(j,j-1)] = b[s:e,1]
+            A[Block(j-1,j)] = reshape(b[1,s:e], 1, e-s+1)
+        end
+        if i > 1 && i < nel(B)
+            A[Block(j-1,j+1)] = b[1,end]
+            A[Block(j+1,j-1)] = b[end,1]
+        end
+    else
+        A[Block(j,j)] .+= b[1,1]
+        A[Block(j+1,j)] .= b[2,1]
+        A[Block(j,j+1)] .= b[1,2]
+        A[Block(j+1,j+1)] .+= b[2,2]
+    end
+
+    j += 1
+end
+
 function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where T
     nel = length(B.order)
 
@@ -240,39 +319,36 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where
 
     j = 1
     for i in eachindex(B.order)
-        b = fun(i)
-        o = B.order[i]
-        @assert size(b,1) == size(b,2) == o
-
-        s = 1+(i>1)
-        e = size(b,1)-(i<nel)
-
-        if o > 2
-            j += i > 1
-            A[Block(j,j)] .= b[s:e,s:e]
-            if i < nel
-                A[Block(j+1,j+1)] .+= b[end,end]
-                A[Block(j,j+1)] = b[s:e,end]
-                A[Block(j+1,j)] = reshape(b[end,s:e], 1, e-s+1)
-            end
-            if i > 1
-                A[Block(j-1,j-1)] .+= b[1,1]
-                A[Block(j,j-1)] = b[s:e,1]
-                A[Block(j-1,j)] = reshape(b[1,s:e], 1, e-s+1)
-            end
-            if i > 1 && i < nel
-                A[Block(j-1,j+1)] = b[1,end]
-                A[Block(j+1,j-1)] = b[end,1]
-            end
-        else
-            A[Block(j,j)] .+= b[1,1]
-            A[Block(j+1,j)] .= b[2,1]
-            A[Block(j,j+1)] .= b[1,2]
-            A[Block(j+1,j+1)] .+= b[2,2]
-        end
-
-        j += 1
+        j = set_block!(fun, A, B, i, j)
     end
+    A
+end
+
+function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
+    B′,restriction = B.applied.args
+    nel = length(B′.order)
+
+    A.data .= zero(T)
+
+    a,b = restriction_extents(restriction)
+
+    b₁ = fun(1)
+    A[Block(1,1)] = b₁[1+a:end-1,1+a:end-1]
+    A[Block(2,2)] = b₁[end,end]
+    A[Block(1,2)] = b₁[1+a:end-1,end]
+    A[Block(2,1)] = reshape(b₁[end,1+a:end-1], 1, :)
+
+    j = 2
+    for i in 2:nel-1
+        j = set_block!(fun, A, B′, i, j)
+    end
+
+    b∞ = fun(nel)
+    A[Block(j,j)] .+= b∞[1,1]
+    A[Block(j+1,j)] = b∞[2:end-b,1]
+    A[Block(j,j+1)] = reshape(b∞[1,2:end-b], 1, :)
+    A[Block(j+1,j+1)] = b∞[2:end-b,2:end-b]
+
     A
 end
 
@@ -340,12 +416,13 @@ function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
     D
 end
 
-derop!(A::BlockSkylineMatrix{T}, B::FEDVR{T}, n::Integer) where T =
-    set_blocks!(i -> diff(B,n,i), A, B)
+difffun(B::FEDVR, n::Integer) = i -> diff(B,n,i)
+difffun(B::RestrictedQuasiArray{<:Any,2,FEDVR}, n::Integer) = i -> diff(B.applied.args[1],n,i)
+
+derop!(A::BlockSkylineMatrix{T}, B::FF, n::Integer) where {T,FF<:FEDVROrRestricted} =
+    set_blocks!(difffun(B,n), A, B)
 
 function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
-    nel = length(B.order)
-
     A.dl .= zero(T)
     A.d .= zero(T)
     A.du .= zero(T)
@@ -360,20 +437,95 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
     A
 end
 
-const FirstDerivative = Union{
-    Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative, <:FEDVR}},
-    Mul{<:Any, <:Tuple{<:Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative}}, <:FEDVR}}
-}
-const SecondDerivative = Union{
-    Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}, <:Derivative, <:FEDVR}},
-    Mul{<:Any, <:Tuple{
+function derop!(A::Tridiagonal{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}, n::Integer) where T
+    B′,restriction = B.applied.args
+    s,e = restriction_extents(restriction)
+
+    A.dl .= zero(T)
+    A.d .= zero(T)
+    A.du .= zero(T)
+
+    nel = length(B′.order)
+    if s > 0
+        b = diff(B′,n,s)
+        A.d[1] = b[2,2]
+    end
+    for i in (1+s):(nel-e)
+        b = diff(B′,n,i)
+        ii = i-s
+        A.dl[ii] = b[2,1]
+        A.d[ii:ii+1] .+= diag(b)
+        A.du[ii] = b[1,2]
+    end
+    if e > 0
+        b = diff(B′,n,nel)
+        A.d[end] += b[1,1]
+    end
+
+    A
+end
+
+const FlatFirstDerivative = Mul{<:Any, <:Tuple{
+    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:Derivative,
+    <:FEDVR}}
+const FlatRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
+    <:Adjoint{<:Any,<:RestrictionMatrix},
+    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:Derivative,
+    <:FEDVR,
+    <:RestrictionMatrix}}
+
+const LazyFirstDerivative = Mul{<:Any, <:Tuple{
+    <:Mul{<:Any, <:Tuple{
+        <:QuasiAdjoint{<:Any, <:FEDVR},
+        <:Derivative}},
+    <:FEDVR}}
+
+const LazyRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
+    <:Mul{<:Any,<:Tuple{
+        <:MulQuasiArray{<:Any, 2, <:Mul{<:Any, <:Tuple{
+            <:Adjoint{<:Any,<:RestrictionMatrix},
+            <:QuasiAdjoint{<:Any,<:FEDVR}}}},
+        <:Derivative}},
+    <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}
+
+const FirstDerivative = Union{FlatFirstDerivative, FlatRestrictedFirstDerivative,
+                              LazyFirstDerivative, LazyRestrictedFirstDerivative}
+
+const FlatSecondDerivative = Mul{<:Any, <:Tuple{
+    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:QuasiAdjoint{<:Any, <:Derivative},
+    <:Derivative,
+    <:FEDVR}}
+const FlatRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
+    <:Adjoint{<:Any,<:RestrictionMatrix},
+    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:QuasiAdjoint{<:Any, <:Derivative},
+    <:Derivative,
+    <:FEDVR,
+    <:RestrictionMatrix}}
+
+const LazySecondDerivative = Mul{<:Any, <:Tuple{
+    <:Mul{<:Any, <:Tuple{
         <:Mul{<:Any, <:Tuple{
-            <:Mul{<:Any, <:Tuple{
-                <:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}}},
-            <:Derivative}}, <:FEDVR}}
-}
-# const FirstDerivative = Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative, <:FEDVR}}
-# const SecondDerivative = Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}, <:Derivative, <:FEDVR}}
+            <:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}}},
+        <:Derivative}},
+    <:FEDVR}}
+
+const LazyRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
+    <:Mul{<:Any,<:Tuple{
+        <:Mul{<:Any,<:Tuple{
+            <:MulQuasiArray{<:Any, 2, <:Mul{<:Any, <:Tuple{
+                <:Adjoint{<:Any,<:RestrictionMatrix},
+                <:QuasiAdjoint{<:Any,<:FEDVR}}}},
+            <:QuasiAdjoint{<:Any,<:Derivative}}},
+        <:Derivative}},
+    <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}
+
+const SecondDerivative = Union{FlatSecondDerivative,FlatRestrictedSecondDerivative,
+                               LazySecondDerivative,LazyRestrictedSecondDerivative}
+
 const FirstOrSecondDerivative = Union{FirstDerivative,SecondDerivative}
 
 difforder(::FirstDerivative) = 1
@@ -381,11 +533,17 @@ difforder(::SecondDerivative) = 2
 
 function copyto!(dest::AbstractMatrix, M::FirstOrSecondDerivative)
     axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
-    derop!(dest, last(M.args), difforder(M))
+    derop!(dest, basis(M), difforder(M))
     dest
 end
 
-similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.args))
+basis(M::Union{FlatFirstDerivative,LazyFirstDerivative,
+               FlatSecondDerivative,LazySecondDerivative}) = last(M.args)
+
+basis(M::Union{FlatRestrictedFirstDerivative, FlatRestrictedSecondDerivative}) =
+    M.args[end-1]*M.args[end]
+
+similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, basis(M))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
 # * Densities
