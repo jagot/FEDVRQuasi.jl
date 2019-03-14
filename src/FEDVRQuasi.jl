@@ -191,8 +191,8 @@ function (B::FEDVR)(D::Diagonal)
 end
 
 # * Mass matrix
-function materialize(M::Mul2{<:Any,<:Any,<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDVR{T}}) where T
-    Ac, B = M.factors
+function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDVR{T}}}) where T
+    Ac, B = M.args
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
@@ -343,8 +343,20 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
     A
 end
 
-const FirstDerivative = Mul{<:Tuple,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR},<:Derivative,<:FEDVR}}
-const SecondDerivative = Mul{<:Tuple,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR},<:QuasiAdjoint{<:Any,<:Derivative},<:Derivative,<:FEDVR}}
+const FirstDerivative = Union{
+    Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative, <:FEDVR}},
+    Mul{<:Any, <:Tuple{<:Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative}}, <:FEDVR}}
+}
+const SecondDerivative = Union{
+    Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}, <:Derivative, <:FEDVR}},
+    Mul{<:Any, <:Tuple{
+        <:Mul{<:Any, <:Tuple{
+            <:Mul{<:Any, <:Tuple{
+                <:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}}},
+            <:Derivative}}, <:FEDVR}}
+}
+# const FirstDerivative = Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:Derivative, <:FEDVR}}
+# const SecondDerivative = Mul{<:Any, <:Tuple{<:QuasiAdjoint{<:Any, <:FEDVR}, <:QuasiAdjoint{<:Any, <:Derivative}, <:Derivative, <:FEDVR}}
 const FirstOrSecondDerivative = Union{FirstDerivative,SecondDerivative}
 
 difforder(::FirstDerivative) = 1
@@ -352,21 +364,22 @@ difforder(::SecondDerivative) = 2
 
 function copyto!(dest::AbstractMatrix, M::FirstOrSecondDerivative)
     axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
-    derop!(dest, last(M.factors), difforder(M))
+    derop!(dest, last(M.args), difforder(M))
     dest
 end
 
-similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.factors))
+similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, last(M.args))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
 # * Densities
-function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:MulQuasiArray{T,N,<:Mul{<:Tuple,<:Tuple{<:FEDVR,<:AbstractArray{T,N}}}}}
+function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVRArray{T,N}}
     axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
-    A,ca = a.mul.factors
-    B,cb = b.mul.factors
+    A,ca = a.applied.args
+    B,cb = b.applied.args
     A == B || throw(DimensionMismatch("Incompatible bases"))
     c = similar(ca)
-    @. c = ca * cb * A.n
+    # We want the first MulQuasiArray to be conjugated, if complex
+    @. c = conj(ca) * cb * A.n
     A*c
 end
 

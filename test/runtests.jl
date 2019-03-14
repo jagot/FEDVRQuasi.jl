@@ -115,16 +115,16 @@ end
         B = FEDVR(1.0:7, 4, t₀=t₀, ϕ=ϕ)
         D = Derivative(axes(B,1))
 
-        DB = D⋆B
-        DDB = D'⋆D⋆B
+        BD = B'⋆D
+        BDD = B'⋆D'⋆D
 
         # This should hold, regardless of whether complex scaling is
         # employed or not.
-        @test B'⋆DB isa FirstDerivative
-        @test B'⋆DDB isa SecondDerivative
+        @test BD⋆B isa FirstDerivative
+        @test BDD⋆B isa SecondDerivative
 
-        @test B'DB == B'*D*B
-        @test B'DDB == B'*D'*D*B
+        @test BD*B == B'*D*B
+        @test BDD*B == B'*D'*D*B
     end
 end
 
@@ -133,7 +133,7 @@ end
     D = Derivative(axes(B,1))
 
     ∇ = B'*D*B
-    ∇² = B'D'D*B
+    ∇² = B'*D'*D*B
 
     A′ = Matrix(undef, B)
     A′′ = Matrix(undef, B)
