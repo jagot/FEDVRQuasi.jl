@@ -133,6 +133,17 @@ end
     end
 end
 
+@testset "Scalar operators" begin
+    B = FEDVR(1.0:7, 4)
+    B̃ = B[:,2:end-1]
+
+    V = Matrix(r -> r, B)
+    @test diag(V) == B.x
+
+    Ṽ = Matrix(r -> r, B̃)
+    @test diag(Ṽ) == B.x[2:end-1]
+end
+
 @testset "Set blocks" begin
     test_blocks(1.0:3,[2,3]) do i
         i*ones(i+1,i+1)

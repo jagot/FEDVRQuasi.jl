@@ -95,7 +95,7 @@ end
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
-const FEDVROrRestricted = Union{FEDVR,RestrictedQuasiArray{<:Any,2,<:FEDVR}}
+const FEDVROrRestricted{T} = Union{FEDVR{T},RestrictedQuasiArray{T,2,<:FEDVR{T}}}
 
 # * Properties
 
@@ -355,7 +355,12 @@ end
 # * Scalar operators
 
 Matrix(f::Function, B::FEDVR{T}) where T = B(Diagonal(f.(B.x)))
-Matrix(::UniformScaling, B::FEDVR{T}) where T = B(Diagonal(ones(T, size(B,2))))
+function Matrix(f::Function, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
+    B′,restriction = B.applied.args
+    a,b = restriction_extents(restriction)
+    B(Diagonal(f.(B′.x[1+a:end-b])))
+end
+Matrix(::UniformScaling, B::FEDVROrRestricted{T}) where T = B(Diagonal(ones(T, size(B,2))))
 
 
 # * Derivatives
