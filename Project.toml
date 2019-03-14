@@ -4,6 +4,7 @@ authors = ["Stefanos Carlström <stefanos.carlstrom@gmail.com>"]
 version = "0.1.0"
 
 [deps]
+BandedMatrices = "aae01518-5342-5314-be14-df237901396f"
 BlockBandedMatrices = "ffab5731-97b5-5995-9138-79e8c1846df0"
 ContinuumArrays = "abb603bd-c6a4-5c0b-b5d0-50a836a7e82c"
 FastGaussQuadrature = "442a2c76-b920-505d-bb47-c5924d526838"

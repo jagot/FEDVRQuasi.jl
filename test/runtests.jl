@@ -18,6 +18,18 @@ using Test
     @test size(B) == (ℵ₁, 631)
 
     @test nel(B) == 70
+
+    @test B[0.0,1] ≠ 0.0
+    @test B[20.0,end] ≠ 0.0
+
+    @testset "Restricted bases" begin
+        B̃ = B[:, 2:end-1]
+        @test axes(B̃) == (Inclusion(0..20), 1:629)
+        @test size(B̃) == (ℵ₁, 629)
+
+        @test B̃[0.0,1] == 0.0
+        @test B̃[20.0,end] == 0.0
+    end
 end
 
 @testset "Complex scaling" begin

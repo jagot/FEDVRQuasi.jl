@@ -5,7 +5,9 @@ import Base.Broadcast: materialize
 
 using ContinuumArrays
 import ContinuumArrays: ℵ₁
-import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion
+import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion, ApplyQuasiArray
+
+using BandedMatrices
 
 using IntervalSets
 
@@ -19,6 +21,8 @@ import LinearAlgebra: Matrix, dot
 using FastGaussQuadrature, BlockBandedMatrices
 
 using Printf
+
+const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, BandedMatrix{<:Int, <:FillArrays.Ones}}}
 
 # * Gauß–Lobatto grid
 
@@ -93,6 +97,7 @@ FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
 
 axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
+size(B::ApplyQuasiArray{<:Any,2,<:RestrictedBasis{<:FEDVR}}) = (ℵ₁, length(B.applied.args[2].data))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
 
 nel(B::FEDVR) = length(B.order)
@@ -175,6 +180,11 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
         end
     end
     B[x,i,m]
+end
+
+@inline function Base.getindex(B::RestrictedBasis{<:FEDVR{T}}, x::Real, k::Integer) where {T}
+    B′,restriction = B.args
+    B′[x,k+restriction.l]
 end
 
 # * Types
