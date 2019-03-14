@@ -185,6 +185,9 @@ end
 
         @test BD*B == B'*D*B
         @test BDD*B == B'*D'*D*B
+
+        @test B'D*B == B'*D*B
+        @test B'D'D*B == B'*D'*D*B
     end
 end
 
