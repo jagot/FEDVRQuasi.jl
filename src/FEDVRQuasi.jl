@@ -5,7 +5,7 @@ import Base.Broadcast: materialize
 
 using ContinuumArrays
 import ContinuumArrays: ℵ₁
-import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray
+import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion
 
 using IntervalSets
 
@@ -91,7 +91,7 @@ FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
 
 # * Properties
 
-axes(B::FEDVR) = (first(B.t)..last(B.t), Base.OneTo(length(B.x)))
+axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
 
@@ -106,7 +106,7 @@ macro elem(B,v,i)
 end
 
 function show(io::IO, B::FEDVR{T}) where T
-    write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1))")
+    write(io, "FEDVR{$(T)} basis with $(nel(B)) elements on $(axes(B,1).domain)")
     if T <: Complex
         rot = @printf(io, " with %s @ %.2f°", B.t₀ <= first(B.t) ? "ICS" : "ECS", rad2deg(angle(B.eiϕ)))
         B.t₀ > first(B.t) && @printf(io, " starting at %.2g", B.t₀)

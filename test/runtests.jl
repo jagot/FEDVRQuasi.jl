@@ -2,7 +2,7 @@ using FEDVRQuasi
 import FEDVRQuasi: nel, complex_rotate, FirstDerivative, SecondDerivative
 using IntervalSets
 using ContinuumArrays
-import ContinuumArrays: ℵ₁
+import ContinuumArrays: ℵ₁, Inclusion
 using LinearAlgebra
 using BlockBandedMatrices
 using LazyArrays
@@ -14,7 +14,7 @@ using Test
     C = FEDVR(range(0,stop=20,length=71), 10)
 
     @test B == C
-    @test axes(B) == (0..20, 1:631)
+    @test axes(B) == (Inclusion(0..20), 1:631)
     @test size(B) == (ℵ₁, 631)
 
     @test nel(B) == 70
@@ -34,11 +34,8 @@ end
 @testset "Pretty printing" begin
     B = FEDVR(range(0,stop=20,length=71), 10)
     C = FEDVR(range(0,stop=20,length=71), 10, t₀=10.0, ϕ=π/3)
-    io = IOBuffer()
-    show(io, B)
-    @test occursin("FEDVR{Float64} basis with 70 elements on 0.0..20.0", String(take!(io)))
-    show(io, C)
-    @test occursin("FEDVR{Complex{Float64}} basis with 70 elements on 0.0..20.0 with ECS @ 60.00° starting at 10", String(take!(io)))
+    @test occursin("FEDVR{Float64} basis with 70 elements on 0.0..20.0", string(B))
+    @test occursin("FEDVR{Complex{Float64}} basis with 70 elements on 0.0..20.0 with ECS @ 60.00° starting at 10", string(C))
 end
 
 @testset "Element access" begin
