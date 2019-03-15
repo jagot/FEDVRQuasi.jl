@@ -341,6 +341,12 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::RestrictedQuasi
 
     a,b = restriction_extents(restriction)
 
+    if nel == 1
+        b₁ = fun(1)
+        A[Block(1,1)] = b₁[1+a:end-b,1+a:end-b]
+        return A
+    end
+
     b₁ = fun(1)
     A[Block(1,1)] = b₁[1+a:end-1,1+a:end-1]
     A[Block(2,2)] = b₁[end,end]

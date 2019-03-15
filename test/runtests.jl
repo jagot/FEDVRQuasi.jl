@@ -212,9 +212,11 @@ end
 end
 
 @testset "Derivatives in restricted bases" begin
-    t = range(0,stop=20,length=5)
-    for (order,sel) in [(4,2:12),(4,1:13),([5,4,2,2],5:9),([5,4,3,2],5:10),
-                        (2,2:3),(2,2:4),(2,2:5),(2,1:5)]
+    for (order,sel,N) in [(4,2:12,5),(4,1:13,5),([5,4,2,2],5:9,5),([5,4,3,2],5:10,5),
+                          (2,2:3,5),(2,2:4,5),(2,2:5,5),(2,1:5,5),
+                          (5,2:4,2)]
+        t = range(0,stop=20,length=N)
+
         R = FEDVR(t, order)
         R̃ = R[:,sel]
 
