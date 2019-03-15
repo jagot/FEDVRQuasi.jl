@@ -260,6 +260,15 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},<
     (B*restB)(Diagonal(ones(T, n)))
 end
 
+# * Inner products
+
+LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = norm(v.applied.args[2], p)
+
+function LinearAlgebra.normalize!(v::FEDVRVecOrMat, p::Real=2)
+    v.applied.args[2][:] /= norm(v, p)
+    v
+end
+
 # * Dense operators
 
 function Matrix(::UndefInitializer, B::Union{FEDVR{T},RestrictedQuasiArray{T,2,FEDVR{T}}}) where T
