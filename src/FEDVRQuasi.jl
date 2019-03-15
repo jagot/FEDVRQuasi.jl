@@ -597,6 +597,28 @@ function dot(B::FEDVR{T}, f::Function) where T
     v
 end
 
+function dot(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::Function) where T
+    B′,restriction = B.applied.args
+    a,b = restriction_extents(restriction)
+
+    n = size(B,2)
+    v = zeros(T, n)
+    for i ∈ 1:nel(B′)
+        sel = B′.elems[i]
+        subsel = if 1+a<sel[1] && n-b > sel[end]
+            Colon()
+        else
+            s = min(max(1+a,sel[1]),sel[end])
+            e = max(min(n-b,sel[end]),sel[1])
+            findfirst(isequal(s),sel):findfirst(isequal(e),sel)
+        end
+
+        @. v[sel[subsel] .- a] += @view((B′.wⁱ[i]*f(@elem(B′,x,i)))[subsel])
+    end
+    v .*= @view(B′.n[1+a:end-b])
+    v
+end
+
 # * Exports
 
 export FEDVR, Derivative, @elem, dot

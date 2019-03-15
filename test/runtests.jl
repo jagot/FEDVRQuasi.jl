@@ -254,6 +254,26 @@ end
     @test norm(χ'v - fv.(r)) < 1e-4
 end
 
+include("derivative_accuracy_utils.jl")
+
+@testset "Derivative accuracy" begin
+    (f,g,h,a,b),s,e = derivative_test_functions(1.0), 1, 1
+
+    Ns = ceil.(Int, 2 .^ range(5,stop=9,length=30))
+
+    orders = 2:10
+    slopes = zeros(length(orders),3)
+
+    for (i,order) in enumerate(orders)
+        hs,ϵg,ϵh,ϵh′,pg,ph,ph′ = compute_derivative_errors(a, b, Ns, order, s, e, f, g, h)
+        slopes[i,:] = [pg ph ph′]
+    end
+
+    println("Derivative convergence rates:")
+    pretty_table([orders slopes], ["Order", "pg", "ph", "ph′"])
+    println()
+end
+
 @testset "Densities" begin
     rₘₐₓ = 20
     R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
