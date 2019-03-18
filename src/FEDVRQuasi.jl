@@ -22,12 +22,22 @@ using FastGaussQuadrature, BlockBandedMatrices
 
 using Printf
 
+# * Auxilliary type definitions for restricted bases
+
 const RestrictionMatrix = BandedMatrix{<:Int, <:FillArrays.Ones}
+
 const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
+const AdjointRestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix}, <:QuasiAdjoint{<:Any,B}}}
+
 const RestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
+const AdjointRestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:AdjointRestrictedBasis{B}}
+
+const BasisOrRestricted{B<:AbstractQuasiMatrix} = Union{B,RestrictedBasis{<:B},<:RestrictedQuasiArray{<:Any,<:Any,<:B}}
+const AdjointBasisOrRestricted{B<:AbstractQuasiMatrix} = Union{<:QuasiAdjoint{<:Any,B},AdjointRestrictedBasis{<:B},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:B}}
 
 unrestricted_basis(R::AbstractQuasiMatrix) = R
-unrestricted_basis(R::RestrictedBasis) = R.applied.args[1]
+unrestricted_basis(R::RestrictedBasis) = first(R.args)
+unrestricted_basis(R::RestrictedQuasiArray) = unrestricted_basis(R.applied)
 
 # * Gauß–Lobatto grid
 
@@ -98,7 +108,8 @@ end
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
-const FEDVROrRestricted{T} = Union{FEDVR{T},RestrictedQuasiArray{T,2,<:FEDVR{T}}}
+const FEDVROrRestricted{T} = BasisOrRestricted{<:FEDVR{T}}
+const AdjointFEDVROrRestricted{T} = AdjointBasisOrRestricted{<:FEDVR{T}}
 
 # * Properties
 
@@ -303,24 +314,37 @@ function LinearAlgebra.normalize!(v::FEDVRVecOrMat, p::Real=2)
     v
 end
 
-const FEDVRInnerProduct{T,U,B₁<:FEDVROrRestricted{U},B₂<:FEDVROrRestricted{U},V<:AbstractVector{T}} =
-    Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:V},
-                       <:QuasiAdjoint{<:Any,<:B₁},
-                       <:B₂,
-                       <:V}}
+const FEDVRInnerProduct{T,U,B₁<:AdjointFEDVROrRestricted{U},B₂<:FEDVROrRestricted{U},V<:AbstractVector{T}} =
+    Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:V}, <:B₁, <:B₂, <:V}}
 
-function LazyArrays.materialize(inner_product::FEDVRInnerProduct{T,U,B₁,B₂,V}) where {T,U,B₁,B₂,V}
-    u,R₁,R₂,v = inner_product.args
-    R₁′ = unrestricted_basis(R₁')
-    R₂′ = unrestricted_basis(R₂)
-    a₁,b₁ = restriction_extents(R₁')
-    a₂,b₂ = restriction_extents(R₂)
-    R₁′ == R₂′ || throw(DimensionMismatch("Incompatible bases"))
-    n = R₁′.n
+const LazyFEDVRInnerProduct{B₁<:AdjointFEDVROrRestricted,B₂<:FEDVROrRestricted} = Mul{<:Any,<:Tuple{
+    <:Mul{<:Any, <:Tuple{
+        <:Adjoint{<:Any,<:AbstractVector},
+        <:B₁}},
+    <:Mul{<:Any, <:Tuple{
+        <:B₂,
+        <:AbstractVector}}}}
+
+function _inner_product(u::Adjoint{<:Any,<:AbstractVector}, A::AdjointFEDVROrRestricted,
+                        B::FEDVROrRestricted, v::AbstractVector)
+    A′ = unrestricted_basis(A')
+    B′ = unrestricted_basis(B)
+    a₁,b₁ = restriction_extents(A')
+    a₂,b₂ = restriction_extents(B)
+    A′ == B′ || throw(DimensionMismatch("Incompatible bases"))
+    n = A′.n
     N = length(n)
-    sel = (1+max(a₁,a₂)):(N-min(b₁,b₂))
+    sel = (1+max(a₁,a₂)):(N-max(b₁,b₂))
 
     dot(conj(@view(u[sel .- a₁])),@view(v[sel .- a₂]))
+end
+
+LazyArrays.materialize(inner_product::FEDVRInnerProduct{T,U,B₁,B₂,V}) where {T,U,B₁,B₂,V} =
+    _inner_product(inner_product.args...)
+
+function LazyArrays.materialize(inner_product::LazyFEDVRInnerProduct{<:AdjointFEDVROrRestricted,<:FEDVROrRestricted})
+    aA,Bb = inner_product.args
+    _inner_product(aA.args..., Bb.args...)
 end
 
 # * Dense operators

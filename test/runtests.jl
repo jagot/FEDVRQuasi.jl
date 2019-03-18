@@ -6,7 +6,7 @@ import ContinuumArrays: ℵ₁, Inclusion
 using LinearAlgebra
 using BlockBandedMatrices
 using LazyArrays
-import LazyArrays: ⋆
+import LazyArrays: ⋆, materialize
 using Test
 
 @testset "Simple tests" begin
@@ -137,9 +137,21 @@ end
     t = range(0,stop=1,length=11)
     B = FEDVR(t, 4)
     B̃ = B[:,1:5]
-    u = B*ones(size(B,2))
-    v = B̃*ones(size(B̃,2))
+
+    uv = ones(size(B,2))
+    u = B*uv
+    lu = B ⋆ uv
+
+    vv = ones(size(B̃,2))
+    v = B̃*vv
+    lv = B̃ ⋆ vv
+
     @test u'v == 5
+
+    lazyip = lu' ⋆ lv
+
+    @test lazyip isa FEDVRQuasi.LazyFEDVRInnerProduct
+    @test materialize(lazyip) == 5
 end
 
 @testset "Scalar operators" begin
