@@ -117,6 +117,7 @@ axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
 size(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = (ℵ₁, length(B.applied.args[2].data))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
+==(A::FEDVROrRestricted,B::FEDVROrRestricted) = unrestricted_basis(A) == unrestricted_basis(B)
 
 order(B::FEDVR) = B.order
 # This assumes that the restriction matrices do not remove blocks
@@ -656,26 +657,46 @@ function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVR
     A*c
 end
 
-struct FEDVRDensity{T,B<:FEDVR,V<:AbstractVecOrMat{T}}
+struct FEDVRDensity{T,B<:FEDVROrRestricted,V<:AbstractVecOrMat{T}}
     R::B
     u::V
     v::V
 end
 
-function Base.Broadcast.broadcasted(::typeof(⋆), a::V, b::V) where {T,B<:FEDVR,V<:FEDVRVecOrMat{T,B}}
-    axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
-    Ra,ca = a.applied.args
-    Rb,cb = b.applied.args
+function _FEDVRDensity(Ra::FEDVROrRestricted, ca::AbstractVector,
+                       Rb::FEDVROrRestricted, cb::AbstractVector)
     Ra == Rb || throw(DimensionMismatch("Incompatible bases"))
     FEDVRDensity(Ra, ca, cb)
 end
 
-function Base.copyto!(ρ::FEDVRVecOrMat{T,R}, ld::FEDVRDensity{T,R}) where {T,R}
-    Rρ,cρ = ρ.applied.args
+function Base.copyto!(cρ::AbstractVector{T}, ld::FEDVRDensity{T,R}, Rρ::R) where {T,R}
     Rρ == ld.R || throw(DimensionMismatch("Incompatible bases"))
     size(cρ) == size(ld.u) || throw(DimensionMismatch("Incompatible sizes"))
+    a,b = restriction_extents(Rρ)
+    n = unrestricted_basis(Rρ).n
     # We want the first MulQuasiArray to be conjugated, if complex
-    @. cρ = conj(ld.u) * ld.v * Rρ.n
+    @. cρ = conj(ld.u) * ld.v * @view(n[1+a:end-b])
+end
+
+function Base.Broadcast.broadcasted(::typeof(⋆), a::V, b::V) where {T,B<:FEDVR,V<:FEDVRVecOrMat{T,B}}
+    axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
+    _FEDVRDensity(a.applied.args..., b.applied.args...)
+end
+
+function Base.copyto!(ρ::FEDVRVecOrMat{T,R}, ld::FEDVRDensity{T,R}) where {T,R}
+    copyto!(ρ.applied.args[2], ld, ρ.applied.args[1])
+    ρ
+end
+
+function Base.Broadcast.broadcasted(::typeof(⋆), a::V₁, b::V₂) where {T,B<:FEDVROrRestricted,
+                                                                      V₁<:Mul{<:Any, <:Tuple{B,<:AbstractVector{T}}},
+                                                                      V₂<:Mul{<:Any, <:Tuple{B,<:AbstractVector{T}}}}
+    axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
+    _FEDVRDensity(a.args..., b.args...)
+end
+
+function Base.copyto!(ρ::Mul{<:Any, <:Tuple{R,<:AbstractVector{T}}}, ld::FEDVRDensity{T,R}) where {T,R}
+    copyto!(ρ.args[2], ld, ρ.args[1])
     ρ
 end
 
