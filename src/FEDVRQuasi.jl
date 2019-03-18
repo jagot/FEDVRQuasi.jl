@@ -551,7 +551,7 @@ const FirstOrSecondDerivative = Union{FirstDerivative,SecondDerivative}
 difforder(::FirstDerivative) = 1
 difforder(::SecondDerivative) = 2
 
-function copyto!(dest::AbstractMatrix, M::FirstOrSecondDerivative)
+function copyto!(dest::Union{Tridiagonal,BlockSkylineMatrix}, M::FirstOrSecondDerivative)
     axes(dest) == axes(M) || throw(DimensionMismatch("axes must be same"))
     derop!(dest, basis(M), difforder(M))
     dest
