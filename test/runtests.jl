@@ -133,6 +133,15 @@ end
     end
 end
 
+@testset "Inner products" begin
+    t = range(0,stop=1,length=11)
+    B = FEDVR(t, 4)
+    B̃ = B[:,1:5]
+    u = B*ones(size(B,2))
+    v = B̃*ones(size(B̃,2))
+    @test u'v == 5
+end
+
 @testset "Scalar operators" begin
     B = FEDVR(1.0:7, 4)
     B̃ = B[:,2:end-1]

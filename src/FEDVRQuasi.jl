@@ -26,6 +26,9 @@ const RestrictionMatrix = BandedMatrix{<:Int, <:FillArrays.Ones}
 const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
 const RestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
 
+unrestricted_basis(R::AbstractQuasiMatrix) = R
+unrestricted_basis(R::RestrictedBasis) = R.applied.args[1]
+
 # * Gauß–Lobatto grid
 
 # https://github.com/JuliaLang/julia/pull/18777
@@ -126,6 +129,14 @@ function show(io::IO, B::FEDVR{T}) where T
     end
 end
 
+function show(io::IO, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
+    B′,restriction = B.applied.args
+    a,b = restriction_extents(restriction)
+    N = length(B′.x)
+    show(io, B′)
+    write(io, ", restricted to basis functions $(1+a)..$(N-b) $(a>0 || b>0 ? "⊂" : "⊆") 1..$(N)")
+end
+
 function block_structure(B::FEDVR)
     if length(B.order) > 1
         bs = o -> o > 2 ? [o-2,1] : [1]
@@ -142,6 +153,10 @@ function restriction_extents(restriction::RestrictionMatrix)
     b = restriction.raxis.stop - restriction.data.axes[2].stop - a
     a,b
 end
+
+restriction_extents(B::FEDVR) = 0,0
+restriction_extents(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
+    restriction_extents(B.applied.args[2])
 
 function block_structure(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
     B,restriction = B.applied.args
@@ -170,6 +185,21 @@ function block_bandwidths(B::Union{FEDVR,RestrictedQuasiArray{<:Any,2,<:FEDVR}},
     end
 end
 
+locs(B::FEDVR) = B.x
+
+function locs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
+    B′,restriction = B.applied.args
+    a,b = FEDVRQuasi.restriction_extents(restriction)
+    B′.x[1+a:end-b]
+end
+
+IntervalSets.leftendpoint(B::FEDVR) = B.x[1]
+IntervalSets.rightendpoint(B::FEDVR) = B.x[end]
+
+IntervalSets.leftendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
+    leftendpoint(B.applied.args[1])
+IntervalSets.rightendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
+    rightendpoint(B.applied.args[1])
 
 # * Basis functions
 
@@ -271,6 +301,26 @@ LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = norm(v.applied.args[2], p)
 function LinearAlgebra.normalize!(v::FEDVRVecOrMat, p::Real=2)
     v.applied.args[2][:] /= norm(v, p)
     v
+end
+
+const FEDVRInnerProduct{T,U,B₁<:FEDVROrRestricted{U},B₂<:FEDVROrRestricted{U},V<:AbstractVector{T}} =
+    Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:V},
+                       <:QuasiAdjoint{<:Any,<:B₁},
+                       <:B₂,
+                       <:V}}
+
+function LazyArrays.materialize(inner_product::FEDVRInnerProduct{T,U,B₁,B₂,V}) where {T,U,B₁,B₂,V}
+    u,R₁,R₂,v = inner_product.args
+    R₁′ = unrestricted_basis(R₁')
+    R₂′ = unrestricted_basis(R₂)
+    a₁,b₁ = restriction_extents(R₁')
+    a₂,b₂ = restriction_extents(R₂)
+    R₁′ == R₂′ || throw(DimensionMismatch("Incompatible bases"))
+    n = R₁′.n
+    N = length(n)
+    sel = (1+max(a₁,a₂)):(N-min(b₁,b₂))
+
+    dot(conj(@view(u[sel .- a₁])),@view(v[sel .- a₂]))
 end
 
 # * Dense operators
