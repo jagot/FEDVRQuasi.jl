@@ -306,14 +306,26 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
     Diagonal(ones(T, n))
 end
 
-# * Inner products
+# * Norms
 
-LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = norm(v.applied.args[2], p)
+_norm(R::FEDVROrRestricted, ϕ::AbstractArray, p::Real=2) = norm(ϕ, p)
+
+LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = _norm(v.applied.args..., p)
+LinearAlgebra.norm(v::Mul{<:Any, <:Tuple{<:FEDVROrRestricted, <:AbstractArray}},
+                   p::Real=2) = _norm(v.args..., p)
 
 function LinearAlgebra.normalize!(v::FEDVRVecOrMat, p::Real=2)
     v.applied.args[2][:] /= norm(v, p)
     v
 end
+
+function LinearAlgebra.normalize!(v::Mul{<:Any, <:Tuple{<:FEDVROrRestricted, <:AbstractArray}},
+                                  p::Real=2)
+    v.args[2][:] /= norm(v, p)
+    v
+end
+
+# * Inner products
 
 const FEDVRInnerProduct{T,U,B₁<:AdjointFEDVROrRestricted{U},B₂<:FEDVROrRestricted{U},V<:AbstractVector{T}} =
     Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:V}, <:B₁, <:B₂, <:V}}
