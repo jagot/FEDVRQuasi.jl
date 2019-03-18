@@ -675,13 +675,13 @@ struct FEDVRDensity{T,B<:FEDVROrRestricted,V<:AbstractVecOrMat{T}}
     v::V
 end
 
-function _FEDVRDensity(Ra::FEDVROrRestricted, ca::AbstractVector,
-                       Rb::FEDVROrRestricted, cb::AbstractVector)
+function _FEDVRDensity(Ra::FEDVROrRestricted, ca::AbstractVecOrMat,
+                       Rb::FEDVROrRestricted, cb::AbstractVecOrMat)
     Ra == Rb || throw(DimensionMismatch("Incompatible bases"))
     FEDVRDensity(Ra, ca, cb)
 end
 
-function Base.copyto!(cρ::AbstractVector{T}, ld::FEDVRDensity{T,R}, Rρ::R) where {T,R}
+function Base.copyto!(cρ::AbstractVecOrMat{T}, ld::FEDVRDensity{T,R}, Rρ::R) where {T,R}
     Rρ == ld.R || throw(DimensionMismatch("Incompatible bases"))
     size(cρ) == size(ld.u) || throw(DimensionMismatch("Incompatible sizes"))
     a,b = restriction_extents(Rρ)
