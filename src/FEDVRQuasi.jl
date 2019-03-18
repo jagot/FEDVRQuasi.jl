@@ -240,15 +240,19 @@ function (B::RestrictedQuasiArray{<:Any,2,<:FEDVR})(D::Diagonal)
 end
 
 # * Mass matrix
-function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},<:FEDVR{T}}}) where T
+function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},
+                                          <:FEDVR{T}}}) where T
     Ac, B = M.args
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-    B(Diagonal(ones(T, size(A,2))))
+    Diagonal(ones(T, size(A,2)))
 end
 
-function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},<:QuasiAdjoint{<:Any,<:FEDVR},<:FEDVR{T},<:RestrictionMatrix}}) where T
+function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
+                                          <:QuasiAdjoint{<:Any,<:FEDVR},
+                                          <:FEDVR{T},
+                                          <:RestrictionMatrix}}) where T
     restAc,Ac,B,restB = M.args
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
     A = parent(Ac)
@@ -257,7 +261,7 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},<
         throw(ArgumentError("Non-equal restriction matrices not supported"))
 
     n = size(M,1)
-    (B*restB)(Diagonal(ones(T, n)))
+    Diagonal(ones(T, n))
 end
 
 # * Inner products

@@ -124,11 +124,11 @@ end
         n = size(R,2)
 
         d = R'R
-        @test d isa BandedBlockBandedMatrix
+        @test d isa Diagonal
         @test size(d) == (n,n)
 
         d̃ = R̃'R̃
-        @test d isa BandedBlockBandedMatrix
+        @test d isa Diagonal
         @test size(d̃) == (n-2,n-2)
     end
 end
