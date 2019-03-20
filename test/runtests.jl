@@ -353,48 +353,69 @@ include("derivative_accuracy_utils.jl")
 end
 
 @testset "Densities" begin
-    rₘₐₓ = 20
-    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
-    r = range(0,stop=rₘₐₓ,length=1001)
-    χ = R*R[r,:]'
+    @testset "Dirichlet1" begin
+        rₘₐₓ = 20
+        R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
+        r = range(0,stop=rₘₐₓ,length=1001)
+        χ = R*R[r,:]'
 
-    fu = r -> r^2*exp(-r)
-    u = R*dot(R, fu)
+        fu = r -> r^2*exp(-r)
+        u = R*(R\fu)
 
-    fv = r -> r^6*exp(-r)
-    v = R*dot(R, fv)
+        fv = r -> r^6*exp(-r)
+        v = R*(R\fv)
 
-    w = u .* v
-    fw = r -> fu(r)*fv(r)
+        w = u .* v
+        fw = r -> fu(r)*fv(r)
 
-    @test norm(χ'w - fw.(r)) < 2e-4
+        @test norm(χ'w - fw.(r)) < 2e-4
 
-    y = R*rand(ComplexF64, size(R,2))
-    y² = y .* y
-    @test all(isreal.(y².applied.args[2]))
-    @test all(y².applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+        y = R*rand(ComplexF64, size(R,2))
+        y² = y .* y
+        @test all(isreal.(y².applied.args[2]))
+        @test all(y².applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
 
-    @testset "Lazy densities" begin
-        uv = u .⋆ v
-        @test uv isa FEDVRQuasi.FEDVRDensity
+        @testset "Lazy densities" begin
+            uv = u .⋆ v
+            @test uv isa FEDVRQuasi.FEDVRDensity
 
-        w′ = similar(u)
-        copyto!(w′, uv)
-        @test norm(χ'w′ - fw.(r)) < 2e-4
+            w′ = similar(u)
+            copyto!(w′, uv)
+            @test norm(χ'w′ - fw.(r)) < 2e-4
 
-        uu = R*repeat(u.applied.args[2],1,2)
-        vv = R*repeat(v.applied.args[2],1,2)
-        uuvv = uu .⋆ vv
-        ww′ = similar(uu)
-        copyto!(ww′, uuvv)
+            uu = R*repeat(u.applied.args[2],1,2)
+            vv = R*repeat(v.applied.args[2],1,2)
+            uuvv = uu .⋆ vv
+            ww′ = similar(uu)
+            copyto!(ww′, uuvv)
 
-        @test norm(χ'ww′ .- fw.(r)) < 2e-4
+            @test norm(χ'ww′ .- fw.(r)) < 2e-4
 
-        yy = y .⋆ y
-        @test yy isa FEDVRQuasi.FEDVRDensity
-        wy = similar(y)
-        copyto!(wy, yy)
-        @test all(isreal.(wy.applied.args[2]))
-        @test all(wy.applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+            yy = y .⋆ y
+            @test yy isa FEDVRQuasi.FEDVRDensity
+            wy = similar(y)
+            copyto!(wy, yy)
+            @test all(isreal.(wy.applied.args[2]))
+            @test all(wy.applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+        end
+    end
+
+    @testset "Dirichlet0" begin
+        f,g,h,a,b = derivative_test_functions(1.0)
+
+        t = range(a,stop=b,length=20)
+        R = FEDVR(t, 10)[:,2:end-1]
+        r = range(t[1],stop=t[end],length=1001)
+        χ = R[r,:]
+
+        u = R*(R\f)
+        v = R*(R\g)
+
+        w = u .* v
+        fw = r -> f(r)*g(r)
+
+        w′ = R*(R\fw)
+
+        @test norm(w.applied.args[2] - w′.applied.args[2]) < 1e-15
     end
 end

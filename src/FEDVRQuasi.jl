@@ -709,8 +709,10 @@ function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVR
     B,cb = b.applied.args
     A == B || throw(DimensionMismatch("Incompatible bases"))
     c = similar(ca)
+    a,b = restriction_extents(A)
+    n = unrestricted_basis(A).n
     # We want the first MulQuasiArray to be conjugated, if complex
-    @. c = conj(ca) * cb * A.n
+    @. c = conj(ca) * cb * @view(n[1+a:end-b])
     A*c
 end
 
