@@ -745,6 +745,14 @@ function dot(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::Function) where T
     v
 end
 
+# * Interpolation
+
+function Base.:(\)(B::FEDVROrRestricted{T}, fun::Function) where T
+    x = locs(B)
+    V = B[x,:]
+    V\fun.(x)
+end
+
 # * Exports
 
 export FEDVR, Derivative, @elem, dot

@@ -277,6 +277,20 @@ end
     @test norm(χ'v - fv.(r)) < 1e-4
 end
 
+@testset "Interpolation" begin
+    rₘₐₓ = 20
+    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
+    r = range(0,stop=rₘₐₓ,length=1001)
+    χ = R*R[r,:]'
+
+    fu = r -> r^2*exp(-r)
+    u = R*(R\fu)
+    @test norm(χ'u - fu.(r)) < 1e-6
+    fv = r -> r^6*exp(-r)
+    v = R*(R\fv)
+    @test norm(χ'v - fv.(r)) < 1e-4
+end
+
 include("derivative_accuracy_utils.jl")
 
 @testset "Derivative accuracy" begin
