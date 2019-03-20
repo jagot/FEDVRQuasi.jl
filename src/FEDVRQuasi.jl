@@ -257,10 +257,10 @@ end
 
 # * Types
 
-const FEDVRArray{T,N,B<:FEDVR} = MulQuasiArray{T,N,<:Mul{<:Any,<:Tuple{B,<:AbstractArray{T,N}}}}
-const FEDVRVector{T,B<:FEDVR} = FEDVRArray{T,1,B}
-const FEDVRMatrix{T,B<:FEDVR} = FEDVRArray{T,2,B}
-const FEDVRVecOrMat{T,B<:FEDVR} = Union{FEDVRVector{T,B},FEDVRMatrix{T,B}}
+const FEDVRArray{T,N,B<:FEDVROrRestricted} = MulQuasiArray{T,N,<:Mul{<:Any,<:Tuple{B,<:AbstractArray{T,N}}}}
+const FEDVRVector{T,B<:FEDVROrRestricted} = FEDVRArray{T,1,B}
+const FEDVRMatrix{T,B<:FEDVROrRestricted} = FEDVRArray{T,2,B}
+const FEDVRVecOrMat{T,B<:FEDVROrRestricted} = Union{FEDVRVector{T,B},FEDVRMatrix{T,B}}
 
 # * Diagonal matrices
 DiagonalBlockDiagonal(A::AbstractMatrix, (rows,cols)::Tuple) =
