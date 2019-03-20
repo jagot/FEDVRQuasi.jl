@@ -108,6 +108,9 @@ end
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
+const RestrictedFEDVR{T} = Union{RestrictedBasis{<:FEDVR{T}},<:RestrictedQuasiArray{<:Any,<:Any,<:FEDVR{T}}}
+const AdjointRestrictedFEDVR{T} = Union{AdjointRestrictedBasis{<:FEDVR{T}},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:FEDVR{T}}}
+
 const FEDVROrRestricted{T} = BasisOrRestricted{<:FEDVR{T}}
 const AdjointFEDVROrRestricted{T} = AdjointBasisOrRestricted{<:FEDVR{T}}
 
@@ -292,7 +295,7 @@ function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},
 end
 
 function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
-                                          <:QuasiAdjoint{<:Any,<:FEDVR},
+                                          <:QuasiAdjoint{<:Any,<:FEDVR{T}},
                                           <:FEDVR{T},
                                           <:RestrictionMatrix}}) where T
     restAc,Ac,B,restB = M.args
@@ -327,32 +330,74 @@ end
 
 # * Inner products
 
-const FEDVRInnerProduct{T,U,B₁<:AdjointFEDVROrRestricted{U},B₂<:FEDVROrRestricted{U},V<:AbstractVector{T}} =
-    Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:V}, <:B₁, <:B₂, <:V}}
+const FEDVRInnerProduct =
+    Mul{<:Any, <:Tuple{<:Adjoint{<:Any,<:AbstractVecOrMat},
+                       <:AdjointFEDVROrRestricted,
+                       <:FEDVROrRestricted,
+                       <:AbstractVecOrMat}}
 
 const LazyFEDVRInnerProduct{B₁<:AdjointFEDVROrRestricted,B₂<:FEDVROrRestricted} = Mul{<:Any,<:Tuple{
     <:Mul{<:Any, <:Tuple{
-        <:Adjoint{<:Any,<:AbstractVector},
+        <:Adjoint{<:Any,<:AbstractVecOrMat},
         <:B₁}},
     <:Mul{<:Any, <:Tuple{
         <:B₂,
-        <:AbstractVector}}}}
+        <:AbstractVecOrMat}}}}
 
-function _inner_product(u::Adjoint{<:Any,<:AbstractVector}, A::AdjointFEDVROrRestricted,
-                        B::FEDVROrRestricted, v::AbstractVector)
+# No restrictions
+function _inner_product(u::Adjoint{<:Any,<:AbstractArray}, A::QuasiAdjoint{<:Any,<:FEDVR},
+                        B::FEDVR, v::AbstractArray)
+    A' == B || throw(DimensionMismatch("Incompatible bases"))
+    u*v
+end
+
+selview(v::AbstractVector, sel) = view(v, sel)
+# Using ' would conjugate the elements, which we do not want since
+# they are already conjugated.
+selview(v::Adjoint{<:Any,<:AbstractVector}, sel) = transpose(view(v, sel))
+
+selview(A::AbstractMatrix, sel) = view(A, sel, :)
+selview(A::Adjoint{<:Any,<:AbstractMatrix}, sel) = view(A, :, sel)
+
+# Implementation for various restrictions
+function _inner_product(u::Adjoint{<:Any,<:AbstractVecOrMat}, a₁, b₁,
+                        A::FEDVR, B::FEDVR,
+                        v::AbstractVecOrMat, a₂, b₂)
+    A == B || throw(DimensionMismatch("Incompatible bases"))
+    n = A.n
+    N = length(n)
+    sel = (1+max(a₁,a₂)):(N-max(b₁,b₂))
+
+    selview(u, sel .- a₁) * selview(v, sel .- a₂)
+end
+
+# A & B restricted
+function _inner_product(u::Adjoint{<:Any,<:AbstractVecOrMat}, A::AdjointRestrictedFEDVR,
+                        B::RestrictedFEDVR, v::AbstractVecOrMat)
     A′ = unrestricted_basis(A')
     B′ = unrestricted_basis(B)
     a₁,b₁ = restriction_extents(A')
     a₂,b₂ = restriction_extents(B)
-    A′ == B′ || throw(DimensionMismatch("Incompatible bases"))
-    n = A′.n
-    N = length(n)
-    sel = (1+max(a₁,a₂)):(N-max(b₁,b₂))
-
-    dot(conj(@view(u[sel .- a₁])),@view(v[sel .- a₂]))
+    _inner_product(u, a₁, b₁, A′, B′, v, a₂, b₂)
 end
 
-LazyArrays.materialize(inner_product::FEDVRInnerProduct{T,U,B₁,B₂,V}) where {T,U,B₁,B₂,V} =
+# A unrestricted, B restricted
+function _inner_product(u::Adjoint{<:Any,<:AbstractVecOrMat}, A::QuasiAdjoint{<:Any,<:FEDVR},
+                        B::RestrictedFEDVR, v::AbstractVecOrMat)
+    B′ = unrestricted_basis(B)
+    a,b = restriction_extents(B)
+    _inner_product(u, 0, 0, A', B′, v, a, b)
+end
+
+# A restricted, B unrestricted
+function _inner_product(u::Adjoint{<:Any,<:AbstractVecOrMat}, A::AdjointRestrictedFEDVR,
+                        B::FEDVR, v::AbstractVecOrMat)
+    A′ = unrestricted_basis(A')
+    a,b = restriction_extents(A')
+    _inner_product(u, a, b, A′, B, v, 0, 0)
+end
+
+LazyArrays.materialize(inner_product::FEDVRInnerProduct) =
     _inner_product(inner_product.args...)
 
 function LazyArrays.materialize(inner_product::LazyFEDVRInnerProduct{<:AdjointFEDVROrRestricted,<:FEDVROrRestricted})
