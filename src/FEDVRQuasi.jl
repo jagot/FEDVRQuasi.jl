@@ -4,7 +4,7 @@ import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff, show
 import Base.Broadcast: materialize
 
 using ContinuumArrays
-import ContinuumArrays: ℵ₁
+import ContinuumArrays: Basis, ℵ₁
 import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion, ApplyQuasiArray
 
 using BandedMatrices
@@ -26,14 +26,14 @@ using Printf
 
 const RestrictionMatrix = BandedMatrix{<:Int, <:FillArrays.Ones}
 
-const RestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
-const AdjointRestrictedBasis{B<:AbstractQuasiMatrix} = Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix}, <:QuasiAdjoint{<:Any,B}}}
+const RestrictedBasis{B<:Basis} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
+const AdjointRestrictedBasis{B<:Basis} = Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix}, <:QuasiAdjoint{<:Any,B}}}
 
-const RestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
-const AdjointRestrictedQuasiArray{T,N,B<:AbstractQuasiMatrix} = MulQuasiArray{T,N,<:AdjointRestrictedBasis{B}}
+const RestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
+const AdjointRestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:AdjointRestrictedBasis{B}}
 
-const BasisOrRestricted{B<:AbstractQuasiMatrix} = Union{B,RestrictedBasis{<:B},<:RestrictedQuasiArray{<:Any,<:Any,<:B}}
-const AdjointBasisOrRestricted{B<:AbstractQuasiMatrix} = Union{<:QuasiAdjoint{<:Any,B},AdjointRestrictedBasis{<:B},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:B}}
+const BasisOrRestricted{B<:Basis} = Union{B,RestrictedBasis{<:B},<:RestrictedQuasiArray{<:Any,<:Any,<:B}}
+const AdjointBasisOrRestricted{B<:Basis} = Union{<:QuasiAdjoint{<:Any,B},AdjointRestrictedBasis{<:B},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:B}}
 
 unrestricted_basis(R::AbstractQuasiMatrix) = R
 unrestricted_basis(R::RestrictedBasis) = first(R.args)
@@ -53,7 +53,7 @@ end
 
 # * Basis construction
 
-struct FEDVR{T,R<:Real,O<:AbstractVector} <: AbstractQuasiMatrix{T}
+struct FEDVR{T,R<:Real,O<:AbstractVector} <: Basis{T}
     t::AbstractVector{R}
     order::O
     i₀::Integer
