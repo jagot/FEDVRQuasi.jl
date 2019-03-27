@@ -716,9 +716,10 @@ function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVR
     A*c
 end
 
-struct FEDVRDensity{T,B<:FEDVROrRestricted,V<:AbstractVecOrMat{T}}
+struct FEDVRDensity{T,B<:FEDVROrRestricted,
+                    U<:AbstractVecOrMat{T},V<:AbstractVecOrMat{T}}
     R::B
-    u::V
+    u::U
     v::V
 end
 
