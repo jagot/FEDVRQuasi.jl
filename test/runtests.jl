@@ -63,15 +63,16 @@ function test_block_structure(t, o, l, u)
     M = Matrix(undef, B)
 
     @test M isa BlockSkylineMatrix
-    @test length(M.l) == length(l)+1
-    @test length(M.u) == length(u)+1
+    bs = M.block_sizes
+    @test length(bs.l) == length(l)+1
+    @test length(bs.u) == length(u)+1
 
     # TODO Test block sizes
 
-    @test all(M.l[1:end-2] .== l[1:end-1])
-    length(l) > 0 && @test M.l[end-1] ≥ l[end]
-    @test all(M.u[3:end] .== u[2:end])
-    length(u) > 0 && @test M.u[2] ≥ u[1]
+    @test all(bs.l[1:end-2] .== l[1:end-1])
+    length(l) > 0 && @test bs.l[end-1] ≥ l[end]
+    @test all(bs.u[3:end] .== u[2:end])
+    length(u) > 0 && @test bs.u[2] ≥ u[1]
 end
 
 @testset "Block structure" begin
