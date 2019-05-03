@@ -202,10 +202,31 @@ end
 
 locs(B::FEDVR) = B.x
 
+rlocs(B::FEDVR{<:Real}) = locs(B)
+
+function rlocs(B::FEDVR{T}) where T
+    R = real(T)
+    nx = length(B.x)
+    x = Vector{R}(undef, nx)
+    ii = 1
+    for i in eachindex(B.order)
+        xw = element_grid(B.order[i], B.t[i], B.t[i+1], B.t[1], one(R))
+        copyto!(view(x, ii:nx), xw[1])
+        ii += length(xw[1])-1
+    end
+    x
+end
+
 function locs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
     B′,restriction = B.applied.args
     a,b = FEDVRQuasi.restriction_extents(restriction)
     B′.x[1+a:end-b]
+end
+
+function rlocs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
+    B′,restriction = B.applied.args
+    a,b = FEDVRQuasi.restriction_extents(restriction)
+    rlocs(B′)[1+a:end-b]
 end
 
 IntervalSets.leftendpoint(B::FEDVR) = B.x[1]
@@ -795,8 +816,8 @@ end
 
 # * Interpolation
 
-function Base.:(\)(B::FEDVROrRestricted{T}, fun::Function) where T
-    x = locs(B)
+function Base.:(\)(B::FEDVROrRestricted, fun::Function)
+    x = rlocs(B)
     V = B[x,:]
     V\fun.(x)
 end
