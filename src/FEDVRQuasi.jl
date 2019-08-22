@@ -4,15 +4,16 @@ import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff, show
 import Base.Broadcast: materialize
 
 using ContinuumArrays
-import ContinuumArrays: Basis, ℵ₁
-import ContinuumArrays.QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion, ApplyQuasiArray
+import ContinuumArrays: Basis, ℵ₁, @simplify
+
+using QuasiArrays
+import QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion, ApplyQuasiArray
 
 using BandedMatrices
 
 using IntervalSets
 
 using LazyArrays
-import LazyArrays: ⋆
 using FillArrays
 
 using LinearAlgebra
@@ -26,11 +27,14 @@ using Printf
 
 const RestrictionMatrix = BandedMatrix{<:Int, <:FillArrays.Ones}
 
-const RestrictedBasis{B<:Basis} = Mul{<:Any,<:Tuple{B, <:RestrictionMatrix}}
-const AdjointRestrictedBasis{B<:Basis} = Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix}, <:QuasiAdjoint{<:Any,B}}}
+const RestrictionTuple{B<:Basis} = Tuple{B, <:RestrictionMatrix}
+const AdjointRestrictionTuple{B<:Basis} = Tuple{<:Adjoint{<:Any,<:RestrictionMatrix}, <:QuasiAdjoint{<:Any,B}}
 
-const RestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:RestrictedBasis{B}}
-const AdjointRestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:AdjointRestrictedBasis{B}}
+const RestrictedBasis{B<:Basis} = Mul{<:Any,<:RestrictionTuple{B}}
+const AdjointRestrictedBasis{B<:Basis} = Mul{<:Any,<:AdjointRestrictionTuple{B}}
+
+const RestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:RestrictionTuple{B}}
+const AdjointRestrictedQuasiArray{T,N,B<:Basis} = MulQuasiArray{T,N,<:AdjointRestrictionTuple{B}}
 
 const BasisOrRestricted{B<:Basis} = Union{B,RestrictedBasis{<:B},<:RestrictedQuasiArray{<:Any,<:Any,<:B}}
 const AdjointBasisOrRestricted{B<:Basis} = Union{<:QuasiAdjoint{<:Any,B},AdjointRestrictedBasis{<:B},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:B}}
@@ -274,14 +278,14 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     B[x,i,m]
 end
 
-@inline function Base.getindex(B::RestrictedBasis{<:FEDVR{T}}, x::Real, k::Integer) where {T}
-    B′,restriction = B.args
-    B′[x,k+restriction.l]
-end
+# @inline function Base.getindex(B::RestrictedBasis{<:FEDVR{T}}, x::Real, k::Integer) where {T}
+#     B′,restriction = B.args
+#     B′[x,k+restriction.l]
+# end
 
 # * Types
 
-const FEDVRArray{T,N,B<:FEDVROrRestricted} = MulQuasiArray{T,N,<:Mul{<:Any,<:Tuple{B,<:AbstractArray{T,N}}}}
+const FEDVRArray{T,N,B<:FEDVROrRestricted} = MulQuasiArray{T,N,<:Tuple{B,<:AbstractArray{T,N}}}
 const FEDVRVector{T,B<:FEDVROrRestricted} = FEDVRArray{T,1,B}
 const FEDVRMatrix{T,B<:FEDVROrRestricted} = FEDVRArray{T,2,B}
 const FEDVRVecOrMat{T,B<:FEDVROrRestricted} = Union{FEDVRVector{T,B},FEDVRMatrix{T,B}}
@@ -306,13 +310,10 @@ function (B::RestrictedQuasiArray{<:Any,2,<:FEDVR})(D::Diagonal)
 end
 
 # * Mass matrix
-function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{<:Any,<:FEDVR{T}},
-                                          <:FEDVR{T}}}) where T
-    Ac, B = M.args
-    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
+@simplify function *(Ac::QuasiAdjoint{<:Any,<:FEDVR}, B::FEDVR)
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-    Diagonal(ones(T, size(A,2)))
+    Diagonal(ones(eltype(B), size(A,2)))
 end
 
 function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
@@ -661,9 +662,9 @@ const LazyFirstDerivative = Mul{<:Any, <:Tuple{
 
 const LazyRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any,<:Tuple{
-        <:MulQuasiArray{<:Any, 2, <:Mul{<:Any, <:Tuple{
+        <:MulQuasiArray{<:Any, 2, <:Tuple{
             <:Adjoint{<:Any,<:RestrictionMatrix},
-            <:QuasiAdjoint{<:Any,<:FEDVR}}}},
+            <:QuasiAdjoint{<:Any,<:FEDVR}}},
         <:Derivative}},
     <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}
 
@@ -693,9 +694,9 @@ const LazySecondDerivative = Mul{<:Any, <:Tuple{
 const LazyRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any,<:Tuple{
         <:Mul{<:Any,<:Tuple{
-            <:MulQuasiArray{<:Any, 2, <:Mul{<:Any, <:Tuple{
+            <:MulQuasiArray{<:Any, 2, <:Tuple{
                 <:Adjoint{<:Any,<:RestrictionMatrix},
-                <:QuasiAdjoint{<:Any,<:FEDVR}}}},
+                <:QuasiAdjoint{<:Any,<:FEDVR}}},
             <:QuasiAdjoint{<:Any,<:Derivative}}},
         <:Derivative}},
     <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}

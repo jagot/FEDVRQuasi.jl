@@ -6,7 +6,7 @@ import ContinuumArrays: ℵ₁, Inclusion
 using LinearAlgebra
 using BlockBandedMatrices
 using LazyArrays
-import LazyArrays: ⋆, materialize
+import LazyArrays: materialize
 using Test
 
 @testset "Simple tests" begin
@@ -102,7 +102,7 @@ function test_blocks(f::Function, t, o)
     end
 end
 
-@testset "Mass matries" begin
+@testset "Mass matrices" begin
     t = range(0,stop=20,length=5)
     @testset "Order 2" begin
         R = FEDVR(t, 2)
@@ -247,7 +247,8 @@ end
         @test B̃' ⋆ D' ⋆ D ⋆ B̃ isa FEDVRQuasi.LazyRestrictedSecondDerivative
 
         @test BD*B == B'*D*B
-        @test BDD*B == B'*D'*D*B
+        # *(::Mul, ::AbstractQuasiArray) -> apply(*, ...)
+        @test_broken BDD*B == B'*D'*D*B
 
         @test B'D*B == B'*D*B
         @test B'D'D*B == B'*D'*D*B
@@ -332,13 +333,13 @@ end
                                                    (rₘₐₓ/2, π/3)]
         R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=t₀, ϕ=ϕ)
         r = range(0,stop=rₘₐₓ,length=1001)
-        χ = R*R[r,:]'
+        χ = R[r,:]'
 
         fu = r -> r^2*exp(-r)
-        u = R*(R\fu)
+        u = (R\fu)
         @test norm(χ'u - fu.(r)) < 1e-6
         fv = r -> r^6*exp(-r)
-        v = R*(R\fv)
+        v = (R\fv)
         @test norm(χ'v - fv.(r)) < 1e-4
     end
 end
