@@ -7,7 +7,11 @@ using ContinuumArrays
 import ContinuumArrays: Basis, ℵ₁, @simplify
 
 using QuasiArrays
-import QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray, Inclusion, ApplyQuasiArray
+import QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray,
+    PInvQuasiMatrix, InvQuasiMatrix
+
+# , QuasiDiagonal,
+#     BroadcastQuasiArray
 
 using BandedMatrices
 
@@ -41,7 +45,7 @@ const AdjointBasisOrRestricted{B<:Basis} = Union{<:QuasiAdjoint{<:Any,B},Adjoint
 
 unrestricted_basis(R::AbstractQuasiMatrix) = R
 unrestricted_basis(R::RestrictedBasis) = first(R.args)
-unrestricted_basis(R::RestrictedQuasiArray) = unrestricted_basis(R.applied)
+unrestricted_basis(R::RestrictedQuasiArray) = first(R.args)
 
 # * Gauß–Lobatto grid
 
@@ -60,13 +64,13 @@ end
 struct FEDVR{T,R<:Real,O<:AbstractVector} <: Basis{T}
     t::AbstractVector{R}
     order::O
-    i₀::Integer
+    i₀::Int
     t₀::R
     eiϕ::T
     x::Vector{T}
     wⁱ::Vector{Vector{R}}
     n::Vector{T}
-    elems::Vector{UnitRange}
+    elems::Vector{UnitRange{Int}}
     function FEDVR(t::AbstractVector{R}, order::O; t₀::R=zero(R), ϕ::R=zero(R)) where {R<:Real,O<:AbstractVector}
         @assert length(order) == length(t)-1
         @assert all(order .> 1)
@@ -122,13 +126,13 @@ const AdjointFEDVROrRestricted{T} = AdjointBasisOrRestricted{<:FEDVR{T}}
 
 axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
-size(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = (ℵ₁, length(B.applied.args[2].data))
+size(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = (ℵ₁, length(B.args[2].data))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
 ==(A::FEDVROrRestricted,B::FEDVROrRestricted) = unrestricted_basis(A) == unrestricted_basis(B)
 
 order(B::FEDVR) = B.order
 # This assumes that the restriction matrices do not remove blocks
-order(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = order(B.applied.args[1])
+order(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = order(B.args[1])
 
 nel(B::FEDVR) = length(order(B))
 element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
@@ -149,7 +153,7 @@ function show(io::IO, B::FEDVR{T}) where T
 end
 
 function show(io::IO, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     a,b = restriction_extents(restriction)
     N = length(B′.x)
     show(io, B′)
@@ -175,10 +179,10 @@ end
 
 restriction_extents(B::FEDVR) = 0,0
 restriction_extents(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    restriction_extents(B.applied.args[2])
+    restriction_extents(B.args[2])
 
 function block_structure(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B,restriction = B.applied.args
+    B,restriction = B.args
     bs = block_structure(B)
     a,b = restriction_extents(restriction)
 
@@ -222,13 +226,13 @@ function rlocs(B::FEDVR{T}) where T
 end
 
 function locs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     a,b = FEDVRQuasi.restriction_extents(restriction)
     B′.x[1+a:end-b]
 end
 
 function rlocs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     a,b = FEDVRQuasi.restriction_extents(restriction)
     rlocs(B′)[1+a:end-b]
 end
@@ -237,9 +241,9 @@ IntervalSets.leftendpoint(B::FEDVR) = B.x[1]
 IntervalSets.rightendpoint(B::FEDVR) = B.x[end]
 
 IntervalSets.leftendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    leftendpoint(B.applied.args[1])
+    leftendpoint(B.args[1])
 IntervalSets.rightendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    rightendpoint(B.applied.args[1])
+    rightendpoint(B.args[1])
 
 # * Basis functions
 
@@ -290,6 +294,12 @@ const FEDVRVector{T,B<:FEDVROrRestricted} = FEDVRArray{T,1,B}
 const FEDVRMatrix{T,B<:FEDVROrRestricted} = FEDVRArray{T,2,B}
 const FEDVRVecOrMat{T,B<:FEDVROrRestricted} = Union{FEDVRVector{T,B},FEDVRMatrix{T,B}}
 
+const AdjointFEDVRArray{T,N,B<:FEDVROrRestricted} = MulQuasiArray{T,<:Any,<:Tuple{<:Adjoint{T,<:AbstractArray{T,N}},
+                                                                                  <:QuasiAdjoint{T,<:B}}}
+const AdjointFEDVRVector{T,B<:FEDVROrRestricted} = AdjointFEDVRArray{T,1,B}
+const AdjointFEDVRMatrix{T,B<:FEDVROrRestricted} = AdjointFEDVRArray{T,2,B}
+const AdjointFEDVRVecOrMat{T,B<:FEDVROrRestricted} = Union{AdjointFEDVRVector{T,B},AdjointFEDVRMatrix{T,B}}
+
 # * Diagonal matrices
 DiagonalBlockDiagonal(A::AbstractMatrix, (rows,cols)::Tuple) =
     BandedBlockBandedMatrix(A, (rows,cols), (0,0), (0,0))
@@ -310,12 +320,14 @@ function (B::RestrictedQuasiArray{<:Any,2,<:FEDVR})(D::Diagonal)
 end
 
 # * Mass matrix
+
 @simplify function *(Ac::QuasiAdjoint{<:Any,<:FEDVR}, B::FEDVR)
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-    Diagonal(ones(eltype(B), size(A,2)))
+    I
 end
 
+# A & B restricted
 function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
                                           <:QuasiAdjoint{<:Any,<:FEDVR{T}},
                                           <:FEDVR{T},
@@ -324,23 +336,68 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
     axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
     A = parent(Ac)
     A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
+
+    # This is mainly for type-stability; it would be trivial to
+    # generate the proper restriction matrix from the combination of
+    # two differently restricted bases, but we would like to have
+    # UniformScaling as the result if they are equal, and this has
+    # higher priority. On the other hand, you typically only compute
+    # the mass matrix in the beginning of the calculation, and thus
+    # type-instability is not a big problem, so this behaviour may
+    # change in the future.
     restAc' == restB ||
         throw(ArgumentError("Non-equal restriction matrices not supported"))
 
-    n = size(M,1)
-    Diagonal(ones(T, n))
+    I
+end
+
+# A unrestricted, B restricted
+materialize(M::Mul{<:Any,<:Tuple{UniformScaling{Bool},<:RestrictionMatrix}}) = M.args[2]
+# A restricted, B unrestricted
+materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},UniformScaling{Bool}}}) = M.args[1]
+
+# * Basis inverses
+
+@simplify function *(A⁻¹::PInvQuasiMatrix{<:Any,<:Tuple{<:FEDVR}},
+                     B::FEDVR)
+    A = parent(A⁻¹)
+    A == B || throw(ArgumentError("Cannot multiply basis with inverse of other basis"))
+    I
+end
+
+@simplify function *(A::FEDVR,
+                     B⁻¹::PInvQuasiMatrix{<:Any,<:Tuple{<:FEDVR}})
+    B = parent(B⁻¹)
+    A == B || throw(ArgumentError("Cannot multiply basis with inverse of other basis"))
+    I
+end
+
+@simplify function *(A⁻¹::PInvQuasiMatrix{<:Any,<:Tuple{<:FEDVR}},
+                     v::FEDVRArray)
+    A = parent(A⁻¹)
+    B,c = v.args
+    A == B || throw(ArgumentError("Cannot multiply basis with inverse of other basis"))
+    c
+end
+
+@simplify function *(v::AdjointFEDVRArray,
+                     B⁻¹::PInvQuasiMatrix{<:Any,<:Tuple{<:FEDVR}})
+    c,Ac = v.args
+    B = parent(B⁻¹)
+    parent(Ac) == B || throw(ArgumentError("Cannot multiply basis with inverse of other basis"))
+    c
 end
 
 # * Norms
 
 _norm(R::FEDVROrRestricted, ϕ::AbstractArray, p::Real=2) = norm(ϕ, p)
 
-LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = _norm(v.applied.args..., p)
+LinearAlgebra.norm(v::FEDVRVecOrMat, p::Real=2) = _norm(v.args..., p)
 LinearAlgebra.norm(v::Mul{<:Any, <:Tuple{<:FEDVROrRestricted, <:AbstractArray}},
                    p::Real=2) = _norm(v.args..., p)
 
 function LinearAlgebra.normalize!(v::FEDVRVecOrMat, p::Real=2)
-    v.applied.args[2][:] /= norm(v, p)
+    v.args[2][:] /= norm(v, p)
     v
 end
 
@@ -492,7 +549,7 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where
 end
 
 function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     nel = length(B′.order)
 
     A.data .= zero(T)
@@ -529,7 +586,7 @@ end
 
 Matrix(f::Function, B::FEDVR{T}) where T = B(Diagonal(f.(B.x)))
 function Matrix(f::Function, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     a,b = restriction_extents(restriction)
     B(Diagonal(f.(B′.x[1+a:end-b])))
 end
@@ -595,7 +652,7 @@ function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
 end
 
 difffun(B::FEDVR, n::Integer) = i -> diff(B,n,i)
-difffun(B::RestrictedQuasiArray{<:Any,2,FEDVR}, n::Integer) = i -> diff(B.applied.args[1],n,i)
+difffun(B::RestrictedQuasiArray{<:Any,2,FEDVR}, n::Integer) = i -> diff(B.args[1],n,i)
 
 derop!(A::BlockSkylineMatrix{T}, B::FF, n::Integer) where {T,FF<:FEDVROrRestricted} =
     set_blocks!(difffun(B,n), A, B)
@@ -616,7 +673,7 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
 end
 
 function derop!(A::Tridiagonal{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}, n::Integer) where T
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     s,e = restriction_extents(restriction)
 
     A.dl .= zero(T)
@@ -727,8 +784,8 @@ materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 # * Densities
 function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVRArray{T,N}}
     axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
-    A,ca = a.applied.args
-    B,cb = b.applied.args
+    A,ca = a.args
+    B,cb = b.args
     A == B || throw(DimensionMismatch("Incompatible bases"))
     c = similar(ca)
     a,b = restriction_extents(A)
@@ -762,11 +819,11 @@ end
 
 function Base.Broadcast.broadcasted(::typeof(⋆), a::V, b::V) where {T,B<:FEDVR,V<:FEDVRVecOrMat{T,B}}
     axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
-    _FEDVRDensity(a.applied.args..., b.applied.args...)
+    _FEDVRDensity(a.args..., b.args...)
 end
 
 function Base.copyto!(ρ::FEDVRVecOrMat{T,R}, ld::FEDVRDensity{T,R}) where {T,R}
-    copyto!(ρ.applied.args[2], ld, ρ.applied.args[1])
+    copyto!(ρ.args[2], ld, ρ.args[1])
     ρ
 end
 
@@ -794,7 +851,7 @@ function dot(B::FEDVR{T}, f::Function) where T
 end
 
 function dot(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::Function) where T
-    B′,restriction = B.applied.args
+    B′,restriction = B.args
     a,b = restriction_extents(restriction)
 
     n = size(B,2)
