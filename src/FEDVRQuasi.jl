@@ -8,10 +8,7 @@ import ContinuumArrays: Basis, ℵ₁, @simplify
 
 using QuasiArrays
 import QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray,
-    PInvQuasiMatrix, InvQuasiMatrix
-
-# , QuasiDiagonal,
-#     BroadcastQuasiArray
+    PInvQuasiMatrix, InvQuasiMatrix, BroadcastQuasiArray
 
 using BandedMatrices
 
@@ -584,14 +581,40 @@ end
 
 # * Scalar operators
 
-Matrix(f::Function, B::FEDVR{T}) where T = B(Diagonal(f.(B.x)))
-function Matrix(f::Function, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.args
-    a,b = restriction_extents(restriction)
-    B(Diagonal(f.(B′.x[1+a:end-b])))
-end
-Matrix(::UniformScaling, B::FEDVROrRestricted{T}) where T = B(Diagonal(ones(T, size(B,2))))
+@simplify function *(Ac::QuasiAdjoint{<:Any,<:FEDVR},
+                     D::QuasiDiagonal,
+                     B::FEDVR)
+    A = parent(Ac)
+    A == B || throw(ArgumentError("Cannot multiply functions on different grids"))
 
+    Diagonal(getindex.(Ref(D.diag), B.x))
+end
+
+# A & B restricted
+function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
+                                          <:QuasiAdjoint{<:Any,<:FEDVR{T}},
+                                          <:QuasiDiagonal,
+                                          <:FEDVR{T},
+                                          <:RestrictionMatrix}}) where T
+    restAc,Ac,D,B,restB = M.args
+    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
+
+    # This is mainly for type-stability; it would be trivial to
+    # generate the proper banded matrix with one off-diagonal, from
+    # the combination of two differently restricted bases, but we
+    # would like to have Diagonal as the result if they are equal, and
+    # this has higher priority. On the other hand, you typically only
+    # compute scalar operators in the beginning of the calculation,
+    # and thus type-instability is not a big problem, so this
+    # behaviour may change in the future.
+    restAc' == restB ||
+        throw(ArgumentError("Non-equal restriction matrices not supported"))
+
+    a,b = restriction_extents(restB)
+    Diagonal(getindex.(Ref(D.diag), B.x[1+a:end-b]))
+end
 
 # * Derivatives
 
@@ -782,6 +805,7 @@ similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, basis(M))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)
 
 # * Densities
+
 function Base.Broadcast.broadcasted(::typeof(*), a::M, b::M) where {T,N,M<:FEDVRArray{T,N}}
     axes(a) == axes(b) || throw(DimensionMismatch("Incompatible axes"))
     A,ca = a.args
@@ -839,18 +863,24 @@ function Base.copyto!(ρ::Mul{<:Any, <:Tuple{R,<:AbstractVector{T}}}, ld::FEDVRD
     ρ
 end
 
-# * Projections
+# * Function interpolation
 
-function dot(B::FEDVR{T}, f::Function) where T
+function Base.:(\ )(B::FEDVR{T}, f::BroadcastQuasiArray) where T
+    axes(f,1) == axes(B,1) ||
+        throw(DimensionMismatch("Function on $(axes(f,1).domain) cannot be interpolated over basis on $(axes(B,1).domain)"))
+
     v = zeros(T, size(B,2))
     for i ∈ 1:nel(B)
-        @. v[B.elems[i]] += B.wⁱ[i]*f(@elem(B,x,i))
+        @. v[B.elems[i]] += B.wⁱ[i]*f[@elem(B,x,i)]
     end
     v .*= B.n
     v
 end
 
-function dot(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::Function) where T
+function Base.:(\ )(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::BroadcastQuasiArray) where T
+    axes(f,1) == axes(B,1) ||
+        throw(DimensionMismatch("Function on $(axes(f,1).domain) cannot be interpolated over basis on $(axes(B,1).domain)"))
+
     B′,restriction = B.args
     a,b = restriction_extents(restriction)
 
@@ -866,18 +896,10 @@ function dot(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::Function) where T
             findfirst(isequal(s),sel):findfirst(isequal(e),sel)
         end
 
-        @. v[sel[subsel] .- a] += @view((B′.wⁱ[i]*f(@elem(B′,x,i)))[subsel])
+        @. v[sel[subsel] .- a] += @view((B′.wⁱ[i]*f[@elem(B′,x,i)])[subsel])
     end
     v .*= @view(B′.n[1+a:end-b])
     v
-end
-
-# * Interpolation
-
-function Base.:(\)(B::FEDVROrRestricted, fun::Function)
-    x = rlocs(B)
-    V = B[x,:]
-    V\fun.(x)
 end
 
 # * Exports

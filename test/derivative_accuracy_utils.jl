@@ -11,21 +11,23 @@ function test_fedvr_derivatives(t::AbstractVector, order::Integer, s, e,
         R = R[:,(1+s):(n-e)]
     end
 
-    D = Derivative(axes(R,1))
+    r = axes(R,1)
+
+    D = Derivative(r)
 
     ∇ = R' * D * R
     ∇² = R' * D' * D * R
 
-    fv = R ⋅ f
+    fv = R \ f.(r)
 
     gv = ∇ * fv
-    δgv = R ⋅ g - gv
+    δgv = R \ g.(r) - gv
 
     hv = ∇ * gv
-    δhv = R ⋅ h - hv
+    δhv = R \ h.(r) - hv
 
     hv′ = ∇² * fv
-    δhv′ = R ⋅ h - hv′
+    δhv′ = R \ h.(r) - hv′
 
     R,fv,gv,hv,hv′,δgv,δhv,δhv′
 end

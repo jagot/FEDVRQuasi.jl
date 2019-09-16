@@ -1,6 +1,7 @@
 using FEDVRQuasi
 import FEDVRQuasi: nel, complex_rotate, rlocs
 using IntervalSets
+using QuasiArrays
 using ContinuumArrays
 import ContinuumArrays: ℵ₁, Inclusion
 using LinearAlgebra
@@ -219,12 +220,13 @@ end
 @testset "Scalar operators" begin
     B = FEDVR(1.0:7, 4)
     B̃ = B[:,2:end-1]
+    r = axes(B,1)
 
-    V = Matrix(r -> r, B)
-    @test diag(V) == B.x
+    V = B'QuasiDiagonal(identity.(r))*B
+    @test V == Diagonal(B.x)
 
-    Ṽ = Matrix(r -> r, B̃)
-    @test diag(Ṽ) == B.x[2:end-1]
+    Ṽ = B̃'QuasiDiagonal(identity.(r))*B̃
+    @test Ṽ == Diagonal(B.x[2:end-1])
 end
 
 @testset "Set blocks" begin
@@ -325,19 +327,43 @@ end
     end
 end
 
-@testset "Projections" begin
+@testset "Function interpolation" begin
     rₘₐₓ = 20
-    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
-    R⁻¹ = pinv(R)
-    r = range(0,stop=rₘₐₓ,length=1001)
-    χ = R[r,:]
+    @testset "t₀ = $(t₀), ϕ = $(ϕ)" for (t₀,ϕ) in [(0.0,0.0)# ,
+                                                   # (rₘₐₓ/2, π/3)
+                                                   ]
+        R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=t₀, ϕ=ϕ)
+        R⁻¹ = pinv(R)
+        r = axes(R,1)
+        r̃ = range(0,stop=rₘₐₓ,length=1001)
+        χ = R[r̃,:]
 
-    fu = r -> r^2*exp(-r)
-    u = R*dot(R, fu)
-    @test norm(χ * (R⁻¹*u) - fu.(r)) < 1e-6
-    fv = r -> r^6*exp(-r)
-    v = R*dot(R, fv)
-    @test norm(χ * (R⁻¹*v) - fv.(r)) < 1e-4
+        fu = r -> r^2*exp(-r)
+        fv = r -> r^6*exp(-8r)
+
+        u = R*(R \ fu.(r))
+        @test norm(χ * (R⁻¹*u) - fu.(r̃)) < 1e-6
+        v = R*(R \ fv.(r))
+        @test norm(χ * (R⁻¹*v) - fv.(r̃)) < 5e-5
+
+        @testset "Restricted basis" begin
+            R̃ = R[:,2:end-1]
+            χ̃ = R̃[r̃,:]
+
+            # # Actually, we want
+            # ũ = R̃*(R̃ \ fu.(r))
+            # # but R̃*... expands the coefficient vector by two elements
+            # # (which are "hidden" by the restriction matrix), which
+            # # causes a dimension mismatch below.
+            ũ = R̃ \ fu.(r)
+            # @test norm(χ̃ * ũ.args[2] - fu.(r̃)) < 5e-6
+            @test norm(χ̃ * ũ - fu.(r̃)) < 5e-6
+            # ṽ = R̃*(R̃ \ fv.(r))
+            ṽ = R̃ \ fv.(r)
+            # @test norm(χ̃ * ṽ.args[2] - fv.(r̃)) < 1e-4
+            @test norm(χ̃ * ṽ - fv.(r̃)) < 5e-5
+        end
+    end
 end
 
 @testset "Real locations" begin
@@ -345,23 +371,6 @@ end
     R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=rₘₐₓ/2, ϕ=π/3)
     R′ = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
     @test norm(rlocs(R)-rlocs(R′)) == 0
-end
-
-@testset "Interpolation" begin
-    rₘₐₓ = 20
-    @testset "t₀ = $(t₀), ϕ = $(ϕ)" for (t₀,ϕ) in [(0.0,0.0),
-                                                   (rₘₐₓ/2, π/3)]
-        R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=t₀, ϕ=ϕ)
-        r = range(0,stop=rₘₐₓ,length=1001)
-        χ = R[r,:]'
-
-        fu = r -> r^2*exp(-r)
-        u = (R\fu)
-        @test norm(χ'u - fu.(r)) < 1e-6
-        fv = r -> r^6*exp(-r)
-        v = (R\fv)
-        @test norm(χ'v - fv.(r)) < 1e-4
-    end
 end
 
 include("derivative_accuracy_utils.jl")
@@ -388,20 +397,21 @@ end
     @testset "Dirichlet1" begin
         rₘₐₓ = 20
         R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
+        r = axes(R,1)
         R⁻¹ = pinv(R)
-        r = range(0,stop=rₘₐₓ,length=1001)
-        χ = R[r,:]
+        r̃ = range(0,stop=rₘₐₓ,length=1001)
+        χ = R[r̃,:]
 
         fu = r -> r^2*exp(-r)
-        u = R*(R\fu)
+        u = R*(R\fu.(r))
 
         fv = r -> r^6*exp(-r)
-        v = R*(R\fv)
+        v = R*(R\fv.(r))
 
         w = u .* v
         fw = r -> fu(r)*fv(r)
 
-        @test norm(χ * (R⁻¹*w) - fw.(r)) < 2e-4
+        @test norm(χ * (R⁻¹*w) - fw.(r̃)) < 2e-4
 
         y = R*rand(ComplexF64, size(R,2))
         y² = y .* y
@@ -414,7 +424,7 @@ end
 
             w′ = similar(u)
             copyto!(w′, uv)
-            @test norm(χ * (R⁻¹*w′) - fw.(r)) < 2e-4
+            @test norm(χ * (R⁻¹*w′) - fw.(r̃)) < 2e-4
 
             uu = R*repeat(R⁻¹*u,1,2)
             vv = R*repeat(R⁻¹*v,1,2)
@@ -422,7 +432,7 @@ end
             ww′ = similar(uu)
             copyto!(ww′, uuvv)
 
-            @test norm(χ * (R⁻¹*ww′) .- fw.(r)) < 2e-4
+            @test norm(χ * (R⁻¹*ww′) .- fw.(r̃)) < 2e-4
 
             yy = y .⋆ y
             @test yy isa FEDVRQuasi.FEDVRDensity
@@ -438,18 +448,19 @@ end
 
         t = range(a,stop=b,length=20)
         R = FEDVR(t, 10)[:,2:end-1]
+        r = axes(R,1)
         # R⁻¹ = pinv(R)
 
-        r = range(t[1],stop=t[end],length=1001)
-        χ = R[r,:]
+        r̃ = range(t[1],stop=t[end],length=1001)
+        χ = R[r̃,:]
 
-        u = R*(R\f)
-        v = R*(R\g)
+        u = R*(R\f.(r))
+        v = R*(R\g.(r))
 
         w = u .* v
         fw = r -> f(r)*g(r)
 
-        w′ = R*(R\fw)
+        w′ = R*(R\fw.(r))
 
         # @test norm(R⁻¹*w - R⁻¹*w′) < 1e-15
         @test norm(w.args[2] - w′.args[2]) < 1e-15
