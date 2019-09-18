@@ -884,13 +884,20 @@ function Base.:(\ )(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::BroadcastQuasiArra
     B′,restriction = B.args
     a,b = restriction_extents(restriction)
 
-    n = size(B,2)
-    v = zeros(T, n)
+    n = size(B′,2)
+    v = zeros(T, size(B,2))
     for i ∈ 1:nel(B′)
         sel = B′.elems[i]
+        # Find which basis functions of finite-element `i` should be
+        # evaluated.
         subsel = if 1+a<sel[1] && n-b > sel[end]
+            # Element is completely within the restricted basis.
             Colon()
         else
+            # Element straddles restriction (we don't allow
+            # restrictions that would throw away an entire
+            # finite-element); find subset of functions that are
+            # within the restriction.
             s = min(max(1+a,sel[1]),sel[end])
             e = max(min(n-b,sel[end]),sel[1])
             findfirst(isequal(s),sel):findfirst(isequal(e),sel)
