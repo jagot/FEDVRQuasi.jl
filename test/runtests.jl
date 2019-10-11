@@ -1,12 +1,14 @@
 using FEDVRQuasi
-import FEDVRQuasi: nel, complex_rotate, rlocs
+import FEDVRQuasi: nel, complex_rotate, rlocs, locs
 using IntervalSets
+using QuasiArrays
 using ContinuumArrays
 import ContinuumArrays: ℵ₁, Inclusion
 using LinearAlgebra
+using BandedMatrices
 using BlockBandedMatrices
 using LazyArrays
-import LazyArrays: ⋆, materialize
+import LazyArrays: materialize
 using Test
 
 @testset "Simple tests" begin
@@ -102,35 +104,53 @@ function test_blocks(f::Function, t, o)
     end
 end
 
-@testset "Mass matries" begin
+@testset "Mass matrices and inverses" begin
     t = range(0,stop=20,length=5)
-    @testset "Order 2" begin
-        R = FEDVR(t, 2)
+    @testset "Order $k" for k ∈ [2,5]
+        R = FEDVR(t, k)
         R̃ = R[:,2:end-1]
 
-        n = size(R,2)
+        m = size(R,2)
+        n = size(R̃,2)
 
-        d = R'R
-        @test d isa Diagonal
-        @test size(d) == (n,n)
+        @testset "Mass matrices" begin
+            d = R'R
+            @test d === I
 
-        d̃ = R̃'R̃
-        @test d isa Diagonal
-        @test size(d̃) == (n-2,n-2)
-    end
-    @testset "Higher order" begin
-        R = FEDVR(t, 5)
-        R̃ = R[:,2:end-1]
+            d̃ = R̃'R̃
+            @test d̃ === I
 
-        n = size(R,2)
+            @test R'R̃ == (R̃'R)' == BandedMatrix((-1 => ones(Int,n),), (m,n), (1,-1))
 
-        d = R'R
-        @test d isa Diagonal
-        @test size(d) == (n,n)
+            # This behaviour is subject to change.
+            @test_throws ArgumentError R̃'R[:,1:end-1]
+        end
 
-        d̃ = R̃'R̃
-        @test d isa Diagonal
-        @test size(d̃) == (n-2,n-2)
+        @testset "Inverses" begin
+            R⁻¹ = pinv(R)
+            # R̃⁻¹ = pinv(R̃)
+
+            @test R⁻¹*R === I
+            @test R*R⁻¹ === I
+
+            cu = rand(size(R,2))
+            cv = rand(size(R,2))
+            cuv = [cu cv]
+
+            u = R*cu
+            v = R*cv
+            uv = R*cuv
+
+            @test R⁻¹*u === cu
+            @test R⁻¹*v === cv
+            @test R⁻¹*uv === cuv
+
+            ut = u'
+            # Fails with: ERROR: MethodError: no method matching axes(::UniformScaling{Float64}, ::Int64)
+            # @test ut*R⁻¹' === ut.args[1]
+
+            @warn "Need to implement/test basis inverses for restricted bases"
+        end
     end
 end
 
@@ -148,6 +168,7 @@ end
             v = B̃*vv
 
             @test u'v == 5
+            @test (uv'*(B'B̃)*vv)[1] == 5
         end
 
         @testset "Lazy inner products" begin
@@ -199,12 +220,13 @@ end
 @testset "Scalar operators" begin
     B = FEDVR(1.0:7, 4)
     B̃ = B[:,2:end-1]
+    r = axes(B,1)
 
-    V = Matrix(r -> r, B)
-    @test diag(V) == B.x
+    V = B'QuasiDiagonal(identity.(r))*B
+    @test V == Diagonal(B.x)
 
-    Ṽ = Matrix(r -> r, B̃)
-    @test diag(Ṽ) == B.x[2:end-1]
+    Ṽ = B̃'QuasiDiagonal(identity.(r))*B̃
+    @test Ṽ == Diagonal(B.x[2:end-1])
 end
 
 @testset "Set blocks" begin
@@ -305,18 +327,54 @@ end
     end
 end
 
-@testset "Projections" begin
+@testset "Function interpolation" begin
     rₘₐₓ = 20
-    R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
-    r = range(0,stop=rₘₐₓ,length=1001)
-    χ = R*R[r,:]'
+    @testset "t₀ = $(t₀), ϕ = $(ϕ)" for (t₀,ϕ) in [(0.0,0.0)# ,
+                                                   # (rₘₐₓ/2, π/3)
+                                                   ]
+        R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=t₀, ϕ=ϕ)
+        R⁻¹ = pinv(R)
+        r = axes(R,1)
+        r̃ = range(0,stop=rₘₐₓ,length=1001)
+        χ = R[r̃,:]
 
-    fu = r -> r^2*exp(-r)
-    u = R*dot(R, fu)
-    @test norm(χ'u - fu.(r)) < 1e-6
-    fv = r -> r^6*exp(-r)
-    v = R*dot(R, fv)
-    @test norm(χ'v - fv.(r)) < 1e-4
+        fu = r -> r^2*exp(-r)
+        fv = r -> r^6*exp(-8r)
+
+        u = R*(R \ fu.(r))
+        @test norm(χ * (R⁻¹*u) - fu.(r̃)) < 1e-6
+        v = R*(R \ fv.(r))
+        @test norm(χ * (R⁻¹*v) - fv.(r̃)) < 5e-5
+
+        @testset "Restricted basis" begin
+            R̃ = R[:,2:end-1]
+            χ̃ = R̃[r̃,:]
+
+            # # Actually, we want
+            # ũ = R̃*(R̃ \ fu.(r))
+            # # but R̃*... expands the coefficient vector by two elements
+            # # (which are "hidden" by the restriction matrix), which
+            # # causes a dimension mismatch below.
+            ũ = R̃ \ fu.(r)
+            # @test norm(χ̃ * ũ.args[2] - fu.(r̃)) < 5e-6
+            @test norm(χ̃ * ũ - fu.(r̃)) < 2e-6
+            # ṽ = R̃*(R̃ \ fv.(r))
+            ṽ = R̃ \ fv.(r)
+            # @test norm(χ̃ * ṽ.args[2] - fv.(r̃)) < 1e-4
+            @test norm(χ̃ * ṽ - fv.(r̃)) < 5e-5
+
+            h = r -> (r-rₘₐₓ/2)^2
+            c = R̃ \ h.(r)
+            # Vandermonde matrix to compare with; its generation is
+            # costly, which is why we prefer to compute overlaps with
+            # basis functions instead.
+            rl = locs(R̃)
+            V = R̃[rl,:]
+            c̃ = V \ h.(rl)
+
+            @test c ≈ c̃ atol=1e-13
+        end
+    end
 end
 
 @testset "Real locations" begin
@@ -324,23 +382,6 @@ end
     R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=rₘₐₓ/2, ϕ=π/3)
     R′ = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
     @test norm(rlocs(R)-rlocs(R′)) == 0
-end
-
-@testset "Interpolation" begin
-    rₘₐₓ = 20
-    @testset "t₀ = $(t₀), ϕ = $(ϕ)" for (t₀,ϕ) in [(0.0,0.0),
-                                                   (rₘₐₓ/2, π/3)]
-        R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10, t₀=t₀, ϕ=ϕ)
-        r = range(0,stop=rₘₐₓ,length=1001)
-        χ = R*R[r,:]'
-
-        fu = r -> r^2*exp(-r)
-        u = R*(R\fu)
-        @test norm(χ'u - fu.(r)) < 1e-6
-        fv = r -> r^6*exp(-r)
-        v = R*(R\fv)
-        @test norm(χ'v - fv.(r)) < 1e-4
-    end
 end
 
 include("derivative_accuracy_utils.jl")
@@ -367,24 +408,26 @@ end
     @testset "Dirichlet1" begin
         rₘₐₓ = 20
         R = FEDVR(range(0,stop=rₘₐₓ,length=11), 10)
-        r = range(0,stop=rₘₐₓ,length=1001)
-        χ = R*R[r,:]'
+        r = axes(R,1)
+        R⁻¹ = pinv(R)
+        r̃ = range(0,stop=rₘₐₓ,length=1001)
+        χ = R[r̃,:]
 
         fu = r -> r^2*exp(-r)
-        u = R*(R\fu)
+        u = R*(R\fu.(r))
 
         fv = r -> r^6*exp(-r)
-        v = R*(R\fv)
+        v = R*(R\fv.(r))
 
         w = u .* v
         fw = r -> fu(r)*fv(r)
 
-        @test norm(χ'w - fw.(r)) < 2e-4
+        @test norm(χ * (R⁻¹*w) - fw.(r̃)) < 2e-4
 
         y = R*rand(ComplexF64, size(R,2))
         y² = y .* y
-        @test all(isreal.(y².applied.args[2]))
-        @test all(y².applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+        @test all(isreal.(R⁻¹*y²))
+        @test all(R⁻¹*y² .== abs2.(R⁻¹*y) .* R.n)
 
         @testset "Lazy densities" begin
             uv = u .⋆ v
@@ -392,22 +435,22 @@ end
 
             w′ = similar(u)
             copyto!(w′, uv)
-            @test norm(χ'w′ - fw.(r)) < 2e-4
+            @test norm(χ * (R⁻¹*w′) - fw.(r̃)) < 2e-4
 
-            uu = R*repeat(u.applied.args[2],1,2)
-            vv = R*repeat(v.applied.args[2],1,2)
+            uu = R*repeat(R⁻¹*u,1,2)
+            vv = R*repeat(R⁻¹*v,1,2)
             uuvv = uu .⋆ vv
             ww′ = similar(uu)
             copyto!(ww′, uuvv)
 
-            @test norm(χ'ww′ .- fw.(r)) < 2e-4
+            @test norm(χ * (R⁻¹*ww′) .- fw.(r̃)) < 2e-4
 
             yy = y .⋆ y
             @test yy isa FEDVRQuasi.FEDVRDensity
             wy = similar(y)
             copyto!(wy, yy)
-            @test all(isreal.(wy.applied.args[2]))
-            @test all(wy.applied.args[2] .== abs2.(y.applied.args[2]) .* R.n)
+            @test all(isreal.(R⁻¹*wy))
+            @test all(R⁻¹*wy .== abs2.(R⁻¹*y) .* R.n)
         end
     end
 
@@ -416,17 +459,21 @@ end
 
         t = range(a,stop=b,length=20)
         R = FEDVR(t, 10)[:,2:end-1]
-        r = range(t[1],stop=t[end],length=1001)
-        χ = R[r,:]
+        r = axes(R,1)
+        # R⁻¹ = pinv(R)
 
-        u = R*(R\f)
-        v = R*(R\g)
+        r̃ = range(t[1],stop=t[end],length=1001)
+        χ = R[r̃,:]
+
+        u = R*(R\f.(r))
+        v = R*(R\g.(r))
 
         w = u .* v
         fw = r -> f(r)*g(r)
 
-        w′ = R*(R\fw)
+        w′ = R*(R\fw.(r))
 
-        @test norm(w.applied.args[2] - w′.applied.args[2]) < 1e-15
+        # @test norm(R⁻¹*w - R⁻¹*w′) < 1e-15
+        @test norm(w.args[2] - w′.args[2]) < 1e-15
     end
 end
