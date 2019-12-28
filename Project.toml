@@ -17,7 +17,12 @@ QuasiArrays = "c4ea9172-b204-11e9-377d-29865faadc5c"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [compat]
-julia = "1.1"
+BandedMatrices = "0.14"
+BlockBandedMatrices = "0.7"
+ContinuumArrays = "0.1.0"
+FastGaussQuadrature = "0.4"
+QuasiArrays = "0.0.6"
+julia = "1.2"
 
 [extras]
 PrettyTables = "08abe8d2-0d0c-5749-adfa-8a2ac140af0d"
