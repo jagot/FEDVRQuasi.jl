@@ -1,5 +1,6 @@
 using FEDVRQuasi
-import FEDVRQuasi: nel, complex_rotate, rlocs, locs
+import FEDVRQuasi: nel, complex_rotate, rlocs, locs,
+    unrestricted_basis, restriction_extents
 using IntervalSets
 using QuasiArrays
 using ContinuumArrays
@@ -29,8 +30,29 @@ using Test
         @test axes(B̃) == (Inclusion(0..20), 1:629)
         @test size(B̃) == (ℵ₁, 629)
 
+        @test leftendpoint(B̃) == 0
+        @test rightendpoint(B̃) == 20
+
         @test B̃[0.0,1] == 0.0
         @test B̃[20.0,end] == 0.0
+
+        @test B isa FEDVR
+        @test B isa FEDVRQuasi.FEDVROrRestricted
+        @test B' isa QuasiAdjoint{<:Any,<:FEDVR}
+        @test B' isa FEDVRQuasi.AdjointFEDVROrRestricted
+        @test !(B̃ isa FEDVR)
+        @test B̃ isa FEDVRQuasi.RestrictedFEDVR
+        @test B̃ isa FEDVRQuasi.FEDVROrRestricted
+        @test B̃' isa FEDVRQuasi.AdjointRestrictedFEDVR
+        @test B̃' isa FEDVRQuasi.AdjointFEDVROrRestricted
+
+        @test unrestricted_basis(B) == B
+        @test unrestricted_basis(B̃) == B
+
+        @test restriction_extents(B) == (0,0)
+        @test restriction_extents(B̃) == (1,1)
+
+        @test locs(B̃) == locs(B)[2:end-1]
     end
 end
 
@@ -123,7 +145,7 @@ end
             @test R'R̃ == (R̃'R)' == BandedMatrix((-1 => ones(Int,n),), (m,n), (1,-1))
 
             # This behaviour is subject to change.
-            @test_throws ArgumentError R̃'R[:,1:end-1]
+            @test_throws DimensionMismatch R̃'R[:,1:end-1]
         end
 
         @testset "Inverses" begin
@@ -169,6 +191,7 @@ end
 
             @test u'v == 5
             @test (uv'*(B'B̃)*vv)[1] == 5
+            @test norm(v) ≈ √5
         end
 
         @testset "Lazy inner products" begin
@@ -225,7 +248,7 @@ end
     V = B'QuasiDiagonal(identity.(r))*B
     @test V == Diagonal(B.x)
 
-    Ṽ = B̃'QuasiDiagonal(identity.(r))*B̃
+    Ṽ = apply(*, B̃', QuasiDiagonal(identity.(r)), B̃)
     @test Ṽ == Diagonal(B.x[2:end-1])
 end
 

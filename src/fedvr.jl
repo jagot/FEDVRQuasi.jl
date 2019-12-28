@@ -55,8 +55,8 @@ end
 FEDVR(t::AbstractVector{T},order::Integer; kwargs...) where T =
     FEDVR(t, Fill(order,length(t)-1); kwargs...)
 
-const RestrictedFEDVR{T} = Union{RestrictedBasis{<:FEDVR{T}},<:RestrictedQuasiArray{<:Any,<:Any,<:FEDVR{T}}}
-const AdjointRestrictedFEDVR{T} = Union{AdjointRestrictedBasis{<:FEDVR{T}},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:FEDVR{T}}}
+const RestrictedFEDVR{T} = RestrictedQuasiArray{T,2,<:FEDVR{T}}
+const AdjointRestrictedFEDVR{T} = AdjointRestrictedQuasiArray{T,2,<:FEDVR{T}}
 
 const FEDVROrRestricted{T} = BasisOrRestricted{<:FEDVR{T}}
 const AdjointFEDVROrRestricted{T} = AdjointBasisOrRestricted{<:FEDVR{T}}
@@ -65,13 +65,11 @@ const AdjointFEDVROrRestricted{T} = AdjointBasisOrRestricted{<:FEDVR{T}}
 
 axes(B::FEDVR) = (Inclusion(first(B.t)..last(B.t)), Base.OneTo(length(B.x)))
 size(B::FEDVR) = (ℵ₁, length(B.x))
-size(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = (ℵ₁, length(B.args[2].data))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
-==(A::FEDVROrRestricted,B::FEDVROrRestricted) = unrestricted_basis(A) == unrestricted_basis(B)
 
 order(B::FEDVR) = B.order
 # This assumes that the restriction matrices do not remove blocks
-order(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) = order(B.args[1])
+order(B::RestrictedFEDVR) = order(parent(B))
 
 nel(B::FEDVR) = length(order(B))
 element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
@@ -91,9 +89,9 @@ function show(io::IO, B::FEDVR{T}) where T
     end
 end
 
-function show(io::IO, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.args
-    a,b = restriction_extents(restriction)
+function show(io::IO, B::RestrictedFEDVR{T}) where T
+    B′ = parent(B)
+    a,b = restriction_extents(B)
     N = length(B′.x)
     show(io, B′)
     write(io, ", restricted to basis functions $(1+a)..$(N-b) $(a>0 || b>0 ? "⊂" : "⊆") 1..$(N)")
@@ -110,20 +108,10 @@ function block_structure(B::FEDVR)
     end
 end
 
-function restriction_extents(restriction::RestrictionMatrix)
-    a = restriction.l
-    b = restriction.raxis.stop - restriction.data.axes[2].stop - a
-    a,b
-end
-
-restriction_extents(B::FEDVR) = 0,0
-restriction_extents(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    restriction_extents(B.args[2])
-
-function block_structure(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B,restriction = B.args
-    bs = block_structure(B)
-    a,b = restriction_extents(restriction)
+function block_structure(B::RestrictedFEDVR)
+    B′ = parent(B)
+    bs = block_structure(B′)
+    a,b = restriction_extents(B)
 
     a ≤ bs[1] && b ≤ bs[end] ||
         throw(ArgumentError("Cannot restrict basis beyond first/last block"))
@@ -132,7 +120,7 @@ function block_structure(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
     bs
 end
 
-function block_bandwidths(B::Union{FEDVR,RestrictedQuasiArray{<:Any,2,<:FEDVR}}, rows::Vector{<:Integer})
+function block_bandwidths(B::Union{FEDVR,RestrictedFEDVR}, rows::Vector{<:Integer})
     nrows = length(rows)
     if nrows > 1
         bw = o -> o > 2 ? [2,1] : [1]
@@ -164,15 +152,15 @@ function rlocs(B::FEDVR{T}) where T
     x
 end
 
-function locs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B′,restriction = B.args
-    a,b = FEDVRQuasi.restriction_extents(restriction)
+function locs(B::RestrictedFEDVR)
+    B′ = parent(B)
+    a,b = restriction_extents(B)
     B′.x[1+a:end-b]
 end
 
-function rlocs(B::RestrictedQuasiArray{<:Any,2,<:FEDVR})
-    B′,restriction = B.args
-    a,b = FEDVRQuasi.restriction_extents(restriction)
+function rlocs(B::RestrictedFEDVR)
+    B′ = parent(B)
+    a,b = restriction_extents(B)
     rlocs(B′)[1+a:end-b]
 end
 
@@ -180,9 +168,9 @@ IntervalSets.leftendpoint(B::FEDVR) = B.x[1]
 IntervalSets.rightendpoint(B::FEDVR) = B.x[end]
 
 IntervalSets.leftendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    leftendpoint(B.args[1])
+    leftendpoint(parent(B))
 IntervalSets.rightendpoint(B::RestrictedQuasiArray{<:Any,2,<:FEDVR}) =
-    rightendpoint(B.args[1])
+    rightendpoint(parent(B))
 
 # * Basis functions
 
@@ -248,15 +236,7 @@ const AdjointFEDVRVecOrMat{T,B<:FEDVROrRestricted} = Union{AdjointFEDVRVector{T,
 end
 
 # A & B restricted
-function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
-                                          <:QuasiAdjoint{<:Any,<:FEDVR{T}},
-                                          <:FEDVR{T},
-                                          <:RestrictionMatrix}}) where T
-    restAc,Ac,B,restB = M.args
-    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
-    A = parent(Ac)
-    A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-
+@simplify function *(Ac::AdjointRestrictedFEDVR, B::RestrictedFEDVR)
     # This is mainly for type-stability; it would be trivial to
     # generate the proper restriction matrix from the combination of
     # two differently restricted bases, but we would like to have
@@ -265,12 +245,19 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
     # the mass matrix in the beginning of the calculation, and thus
     # type-instability is not a big problem, so this behaviour may
     # change in the future.
-    restAc' == restB ||
-        throw(ArgumentError("Non-equal restriction matrices not supported"))
+    reverse(axes(Ac)) == axes(B) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    parent(A) == parent(B) || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
 
     I
 end
 
+# TODO: This is type piracy, the materialization should be intercepted
+# at a higher level, i.e.
+#
+# materialize(M::Mul{<:Any,<:Tuple{<:FEDVR{T},
+#                                  <:RestrictedFEDVR{T}}}) where T
+#
 # A unrestricted, B restricted
 materialize(M::Mul{<:Any,<:Tuple{UniformScaling{Bool},<:RestrictionMatrix}}) = M.args[2]
 # A restricted, B unrestricted
@@ -322,12 +309,12 @@ function Base.:(\ )(B::FEDVR{T}, f::BroadcastQuasiArray) where T
     v
 end
 
-function Base.:(\ )(B::RestrictedQuasiArray{T,2,FEDVR{T}}, f::BroadcastQuasiArray) where T
+function Base.:(\ )(B::RestrictedFEDVR{T}, f::BroadcastQuasiArray) where T
     axes(f,1) == axes(B,1) ||
         throw(DimensionMismatch("Function on $(axes(f,1).domain) cannot be interpolated over basis on $(axes(B,1).domain)"))
 
-    B′,restriction = B.args
-    a,b = restriction_extents(restriction)
+    B′ = parent(B)
+    a,b = restriction_extents(B)
 
     n = size(B′,2)
     v = zeros(T, size(B,2))

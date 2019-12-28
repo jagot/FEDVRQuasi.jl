@@ -57,7 +57,7 @@ function diff(B::FEDVR{T}, n::Integer, i::Integer) where T
 end
 
 difffun(B::FEDVR, n::Integer) = i -> diff(B,n,i)
-difffun(B::RestrictedQuasiArray{<:Any,2,FEDVR}, n::Integer) = i -> diff(B.args[1],n,i)
+difffun(B::RestrictedFEDVR, n::Integer) = i -> diff(parent(B),n,i)
 
 derop!(A::BlockSkylineMatrix{T}, B::FF, n::Integer) where {T,FF<:FEDVROrRestricted} =
     set_blocks!(difffun(B,n), A, B)
@@ -77,9 +77,9 @@ function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
     A
 end
 
-function derop!(A::Tridiagonal{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}, n::Integer) where T
-    B′,restriction = B.args
-    s,e = restriction_extents(restriction)
+function derop!(A::Tridiagonal{T}, B::RestrictedFEDVR, n::Integer) where T
+    B′ = parent(B)
+    s,e = restriction_extents(B)
 
     A.dl .= zero(T)
     A.d .= zero(T)
@@ -110,11 +110,9 @@ const FlatFirstDerivative = Mul{<:Any, <:Tuple{
     <:Derivative,
     <:FEDVR}}
 const FlatRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
-    <:Adjoint{<:Any,<:RestrictionMatrix},
-    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:AdjointRestrictedFEDVR,
     <:Derivative,
-    <:FEDVR,
-    <:RestrictionMatrix}}
+    <:FEDVR}}
 
 const LazyFirstDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any, <:Tuple{
@@ -124,11 +122,9 @@ const LazyFirstDerivative = Mul{<:Any, <:Tuple{
 
 const LazyRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any,<:Tuple{
-        <:MulQuasiArray{<:Any, 2, <:Tuple{
-            <:Adjoint{<:Any,<:RestrictionMatrix},
-            <:QuasiAdjoint{<:Any,<:FEDVR}}},
+        <:AdjointRestrictedFEDVR,
         <:Derivative}},
-    <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}
+    <:RestrictedFEDVR}}
 
 const FirstDerivative = Union{FlatFirstDerivative, FlatRestrictedFirstDerivative,
                               LazyFirstDerivative, LazyRestrictedFirstDerivative}
@@ -139,12 +135,10 @@ const FlatSecondDerivative = Mul{<:Any, <:Tuple{
     <:Derivative,
     <:FEDVR}}
 const FlatRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
-    <:Adjoint{<:Any,<:RestrictionMatrix},
-    <:QuasiAdjoint{<:Any, <:FEDVR},
+    <:AdjointRestrictedFEDVR,
     <:QuasiAdjoint{<:Any, <:Derivative},
     <:Derivative,
-    <:FEDVR,
-    <:RestrictionMatrix}}
+    <:FEDVR}}
 
 const LazySecondDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any, <:Tuple{
@@ -156,12 +150,10 @@ const LazySecondDerivative = Mul{<:Any, <:Tuple{
 const LazyRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any,<:Tuple{
         <:Mul{<:Any,<:Tuple{
-            <:MulQuasiArray{<:Any, 2, <:Tuple{
-                <:Adjoint{<:Any,<:RestrictionMatrix},
-                <:QuasiAdjoint{<:Any,<:FEDVR}}},
+            <:AdjointRestrictedFEDVR,
             <:QuasiAdjoint{<:Any,<:Derivative}}},
         <:Derivative}},
-    <:RestrictedQuasiArray{<:Any,2,<:FEDVR}}}
+    <:RestrictedFEDVR}}
 
 const SecondDerivative = Union{FlatSecondDerivative,FlatRestrictedSecondDerivative,
                                LazySecondDerivative,LazyRestrictedSecondDerivative}
@@ -177,11 +169,7 @@ function copyto!(dest::Union{Tridiagonal,BlockSkylineMatrix}, M::FirstOrSecondDe
     dest
 end
 
-basis(M::Union{FlatFirstDerivative,LazyFirstDerivative,
-               FlatSecondDerivative,LazySecondDerivative}) = last(M.args)
-
-basis(M::Union{FlatRestrictedFirstDerivative, FlatRestrictedSecondDerivative}) =
-    M.args[end-1]*M.args[end]
+basis(M::FirstOrSecondDerivative) = last(M.args)
 
 similar(M::FirstOrSecondDerivative, ::Type{T}) where T = Matrix(undef, basis(M))
 materialize(M::FirstOrSecondDerivative) = copyto!(similar(M, eltype(M)), M)

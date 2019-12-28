@@ -11,7 +11,7 @@ function (B::FEDVR)(D::Diagonal)
     all(order(B) .== 2) ? D : DiagonalBlockDiagonal(D, block_structure(B))
 end
 
-function (B::RestrictedQuasiArray{<:Any,2,<:FEDVR})(D::Diagonal)
+function (B::RestrictedFEDVR)(D::Diagonal)
     n = size(B,2)
     @assert size(D) == (n,n)
     all(order(B) .== 2) ? D : DiagonalBlockDiagonal(D, block_structure(B))
@@ -19,7 +19,7 @@ end
 
 # * Dense operators
 
-function Matrix(::UndefInitializer, B::Union{FEDVR{T},RestrictedQuasiArray{T,2,FEDVR{T}}}) where T
+function Matrix(::UndefInitializer, B::Union{FEDVR{T},RestrictedFEDVR{T}}) where T
     if all(order(B) .== 2)
         n = size(B,2)
         dl = Vector{T}(undef, n-1)
@@ -81,13 +81,13 @@ function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::FEDVR{T}) where
     A
 end
 
-function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::RestrictedQuasiArray{T,2,FEDVR{T}}) where T
-    B′,restriction = B.args
+function set_blocks!(fun::Function, A::BlockSkylineMatrix{T}, B::RestrictedFEDVR{T}) where T
+    B′ = parent(B)
     nel = length(B′.order)
 
     A.data .= zero(T)
 
-    a,b = restriction_extents(restriction)
+    a,b = restriction_extents(B)
 
     if nel == 1
         b₁ = fun(1)
@@ -127,16 +127,9 @@ end
 end
 
 # A & B restricted
-function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
-                                          <:QuasiAdjoint{<:Any,<:FEDVR{T}},
-                                          <:QuasiDiagonal,
-                                          <:FEDVR{T},
-                                          <:RestrictionMatrix}}) where T
-    restAc,Ac,D,B,restB = M.args
-    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
-    A = parent(Ac)
-    A == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
-
+@simplify function *(Ac::AdjointRestrictedFEDVR,
+                     D::QuasiDiagonal,
+                     B::RestrictedFEDVR)
     # This is mainly for type-stability; it would be trivial to
     # generate the proper banded matrix with one off-diagonal, from
     # the combination of two differently restricted bases, but we
@@ -145,9 +138,10 @@ function materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},
     # compute scalar operators in the beginning of the calculation,
     # and thus type-instability is not a big problem, so this
     # behaviour may change in the future.
-    restAc' == restB ||
-        throw(ArgumentError("Non-equal restriction matrices not supported"))
+    reverse(axes(Ac)) == axes(B) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    parent(A) == parent(B) || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
 
-    a,b = restriction_extents(restB)
-    Diagonal(getindex.(Ref(D.diag), B.x[1+a:end-b]))
+    a,b = restriction_extents(B)
+    Diagonal(getindex.(Ref(D.diag), parent(B).x[1+a:end-b]))
 end

@@ -8,7 +8,7 @@ import ContinuumArrays: Basis, ℵ₁, @simplify
 
 using QuasiArrays
 import QuasiArrays: AbstractQuasiMatrix, QuasiAdjoint, MulQuasiArray,
-    PInvQuasiMatrix, InvQuasiMatrix, BroadcastQuasiArray
+    PInvQuasiMatrix, InvQuasiMatrix, BroadcastQuasiArray, SubQuasiArray
 
 using BandedMatrices
 
