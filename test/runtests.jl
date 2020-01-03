@@ -291,8 +291,18 @@ end
         @test B̃' ⋆ D' ⋆ D ⋆ B̃ isa FEDVRQuasi.SecondDerivative
         @test B̃' ⋆ D' ⋆ D ⋆ B̃ isa FEDVRQuasi.LazyRestrictedSecondDerivative
 
+        @test applied(*, B', D, B) isa FEDVRQuasi.FirstDerivative
+        @test applied(*, B', D, B) isa FEDVRQuasi.FlatFirstDerivative
+        @test applied(*, B', D', D, B) isa FEDVRQuasi.SecondDerivative
+        @test applied(*, B', D', D, B) isa FEDVRQuasi.FlatSecondDerivative
+
+        @test applied(*, B̃', D, B̃) isa FEDVRQuasi.FirstDerivative
+        @test applied(*, B̃', D, B̃) isa FEDVRQuasi.FlatRestrictedFirstDerivative
+        @test applied(*, B̃', D', D, B̃) isa FEDVRQuasi.SecondDerivative
+        @test applied(*, B̃', D', D, B̃) isa FEDVRQuasi.FlatRestrictedSecondDerivative
+
         @test BD*B == B'*D*B
-        @test BDD*B == B'*D'*D*B
+        @test_broken BDD*B == B'*D'*D*B
 
         @test B'D*B == B'*D*B
         @test B'D'D*B == B'*D'*D*B
@@ -300,53 +310,69 @@ end
 end
 
 @testset "Materialize derivatives" begin
-    B = FEDVR(1.0:7, 4)
-    D = Derivative(axes(B,1))
+    @testset "$style materialization" for (style,first_derivative,second_derivative) in [
+        ("Infix", (B,D) -> B'*D*B, (B,D) -> B'*D'*D*B),
+        ("applied", (B,D) -> materialize(applied(*, B', D, B)),
+         (B,D) -> materialize(applied(*, B', D', D, B))),
+        ("apply", (B,D) -> apply(*, B', D, B),
+         (B,D) -> apply(*, B', D', D, B))
+    ]
+        B = FEDVR(1.0:7, 4)
+        D = Derivative(axes(B,1))
 
-    ∇ = B'*D*B
-    ∇² = B'*D'*D*B
+        ∇ = first_derivative(B,D)
+        ∇² = second_derivative(B,D)
 
-    A′ = Matrix(undef, B)
-    A′′ = Matrix(undef, B)
+        A′ = Matrix(undef, B)
+        A′′ = Matrix(undef, B)
 
-    FEDVRQuasi.derop!(A′, B, 1)
-    FEDVRQuasi.derop!(A′′, B, 2)
+        FEDVRQuasi.derop!(A′, B, 1)
+        FEDVRQuasi.derop!(A′′, B, 2)
 
-    @test ∇ isa BlockSkylineMatrix
-    @test ∇² isa BlockSkylineMatrix
+        @test ∇ isa BlockSkylineMatrix
+        @test ∇² isa BlockSkylineMatrix
 
-    @test ∇ == A′
-    @test ∇² == A′′
+        @test ∇ == A′
+        @test ∇² == A′′
+    end
 end
 
 @testset "Derivatives in restricted bases" begin
-    for (order,sel,N) in [(4,2:12,5),(4,1:13,5),([5,4,2,2],5:9,5),([5,4,3,2],5:10,5),
-                          (2,2:3,5),(2,2:4,5),(2,2:5,5),(2,1:5,5),
-                          (5,2:4,2)]
-        t = range(0,stop=20,length=N)
+    @testset "$style materialization" for (style,first_derivative,second_derivative) in [
+        ("Infix", (B,D) -> B'*D*B, (B,D) -> B'*D'*D*B),
+        ("applied", (B,D) -> materialize(applied(*, B', D, B)),
+         (B,D) -> materialize(applied(*, B', D', D, B))),
+        ("apply", (B,D) -> apply(*, B', D, B),
+         (B,D) -> apply(*, B', D', D, B))
+    ]
+        for (order,sel,N) in [(4,2:12,5),(4,1:13,5),([5,4,2,2],5:9,5),([5,4,3,2],5:10,5),
+                              (2,2:3,5),(2,2:4,5),(2,2:5,5),(2,1:5,5),
+                              (5,2:4,2)]
+            t = range(0,stop=20,length=N)
 
-        R = FEDVR(t, order)
-        R̃ = R[:,sel]
+            R = FEDVR(t, order)
+            R̃ = R[:,sel]
 
-        D = Derivative(axes(R̃,1))
+            D = Derivative(axes(R̃,1))
 
-        expT = (any(order .> 2) ? BlockSkylineMatrix : Tridiagonal)
+            expT = (any(order .> 2) ? BlockSkylineMatrix : Tridiagonal)
 
-        ∇ = R' * D * R
-        ∇̃ = R̃' * D * R̃
+            ∇ = first_derivative(R, D)
+            ∇̃ = first_derivative(R̃, D)
 
-        @test ∇ isa expT
-        @test ∇̃ isa expT
+            @test ∇ isa expT
+            @test ∇̃ isa expT
 
-        @test Matrix(∇)[sel,sel] == Matrix(∇̃)
+            @test Matrix(∇)[sel,sel] == Matrix(∇̃)
 
-        ∇² = R' * D' * D * R
-        ∇̃² = R̃' * D' * D * R̃
+            ∇² = second_derivative(R, D)
+            ∇̃² = second_derivative(R̃, D)
 
-        @test ∇² isa expT
-        @test ∇̃² isa expT
+            @test ∇² isa expT
+            @test ∇̃² isa expT
 
-        @test Matrix(∇²)[sel,sel] == Matrix(∇̃²)
+            @test Matrix(∇²)[sel,sel] == Matrix(∇̃²)
+        end
     end
 end
 

@@ -112,7 +112,7 @@ const FlatFirstDerivative = Mul{<:Any, <:Tuple{
 const FlatRestrictedFirstDerivative = Mul{<:Any, <:Tuple{
     <:AdjointRestrictedFEDVR,
     <:Derivative,
-    <:FEDVR}}
+    <:RestrictedFEDVR}}
 
 const LazyFirstDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any, <:Tuple{
@@ -138,7 +138,7 @@ const FlatRestrictedSecondDerivative = Mul{<:Any, <:Tuple{
     <:AdjointRestrictedFEDVR,
     <:QuasiAdjoint{<:Any, <:Derivative},
     <:Derivative,
-    <:FEDVR}}
+    <:RestrictedFEDVR}}
 
 const LazySecondDerivative = Mul{<:Any, <:Tuple{
     <:Mul{<:Any, <:Tuple{
