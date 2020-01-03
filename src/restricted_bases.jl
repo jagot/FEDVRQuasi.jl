@@ -16,3 +16,5 @@ function restriction_extents(B̃::RestrictedQuasiArray)
     a,b = B̃.indices[2][[1,end]]
     a-1,size(B,2)-b
 end
+
+restriction(B̃::RestrictedQuasiArray) = last(LazyArrays.arguments(B̃))

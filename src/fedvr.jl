@@ -252,16 +252,23 @@ end
     I
 end
 
-# TODO: This is type piracy, the materialization should be intercepted
-# at a higher level, i.e.
-#
-# materialize(M::Mul{<:Any,<:Tuple{<:FEDVR{T},
-#                                  <:RestrictedFEDVR{T}}}) where T
-#
-# A unrestricted, B restricted
-materialize(M::Mul{<:Any,<:Tuple{UniformScaling{Bool},<:RestrictionMatrix}}) = M.args[2]
-# A restricted, B unrestricted
-materialize(M::Mul{<:Any,<:Tuple{<:Adjoint{<:Any,<:RestrictionMatrix},UniformScaling{Bool}}}) = M.args[1]
+function materialize(M::Mul{<:Any,<:Tuple{<:QuasiAdjoint{T,<:FEDVR{T}},
+                                          <:RestrictedFEDVR{T}}}) where T
+    Ac,B = M.args
+    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    A == parent(B) || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
+    restriction(B)
+end
+
+function materialize(M::Mul{<:Any,<:Tuple{<:AdjointRestrictedFEDVR{T},
+                                          <:FEDVR{T}}}) where T
+    Ac,B = M.args
+    axes(Ac,2) == axes(B,1) || throw(DimensionMismatch("axes must be same"))
+    A = parent(Ac)
+    parent(A) == B || throw(ArgumentError("Cannot multiply incompatible FEDVR expansions"))
+    restriction(A)'
+end
 
 # * Basis inverses
 
