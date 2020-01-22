@@ -46,4 +46,26 @@
             @test c ≈ c̃ atol=1e-13
         end
     end
+    @testset "Restricted interpolation" begin
+        L = 20.0
+        n = 10
+        t = range(-L/2, stop=L/2, length=n)
+        B = FEDVR(t, [4,3,4,2,5,4,2,4,8])
+        N = size(B,2)
+        xx = axes(B,1)
+
+        Bl = B[:,1:round(Int, 0.6N)+1]
+        Bv = B[:,round(Int, 0.4N):end]
+
+        f = sin
+        c = B \ f.(xx)
+        cl = Bl \ f.(xx)
+        cv = Bv \ f.(xx)
+
+        @test length(cl) == size(Bl,2)
+        @test c[1:length(cl)-1] == cl[1:end-1]
+
+        @test length(cv) == size(Bv,2)
+        @test c[end-length(cv)+1:end] == cv
+    end
 end

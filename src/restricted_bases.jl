@@ -7,6 +7,10 @@ const AdjointRestrictedQuasiArray{T,N,B<:Basis} = QuasiAdjoint{T,<:RestrictedQua
 const BasisOrRestricted{B<:Basis} = Union{B,<:RestrictedQuasiArray{<:Any,<:Any,<:B}}
 const AdjointBasisOrRestricted{B<:Basis} = Union{<:QuasiAdjoint{<:Any,B},<:AdjointRestrictedQuasiArray{<:Any,<:Any,<:B}}
 
+indices(B::Basis) = axes(B)
+indices(B::RestrictedQuasiArray) = B.indices
+indices(B, i) = indices(B)[i]
+
 unrestricted_basis(R::AbstractQuasiMatrix) = R
 unrestricted_basis(R::RestrictedQuasiArray) = parent(R)
 

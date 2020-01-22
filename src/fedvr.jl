@@ -68,11 +68,22 @@ size(B::FEDVR) = (ℵ₁, length(B.x))
 ==(A::FEDVR,B::FEDVR) = A.t == B.t && A.order == B.order
 
 order(B::FEDVR) = B.order
-# This assumes that the restriction matrices do not remove blocks
-order(B::RestrictedFEDVR) = order(parent(B))
+order(B::RestrictedFEDVR) = order(parent(B))[elements(B)]
+order(B::FEDVROrRestricted, i) = order(parent(B))[i]
 
 nel(B::FEDVR) = length(order(B))
-element_boundaries(B::FEDVR) = vcat(1,1 .+ cumsum(B.order .- 1))
+element_boundaries(B::FEDVR) = vcat(1,last.(B.elems))
+
+elements(B::FEDVR) = 1:nel(B)
+function elements(B::RestrictedFEDVR)
+    is=indices(B,2)
+    a,b = first(is),last(is)
+    elems = parent(B).elems
+    i = findfirst(e -> a ∈ e, elems)
+    j = findlast(e -> b ∈ e, elems)
+    (isnothing(i) || isnothing(j)) && throw(ArgumentError("Invalid restriction $(a)..$(b)"))
+    i:j
+end
 
 complex_rotate(x,B::FEDVR{T}) where {T<:Real} = x
 complex_rotate(x,B::FEDVR{T}) where {T<:Complex} = x < B.t₀ ? x : B.t₀ + (x-B.t₀)*B.eiϕ
@@ -91,40 +102,61 @@ end
 
 function show(io::IO, B::RestrictedFEDVR{T}) where T
     B′ = parent(B)
-    a,b = restriction_extents(B)
+    is = indices(B,2)
+    a,b = first(is),last(is)
+    els = elements(B)
     N = length(B′.x)
     show(io, B′)
-    write(io, ", restricted to basis functions $(1+a)..$(N-b) $(a>0 || b>0 ? "⊂" : "⊆") 1..$(N)")
+    write(io, ", restricted to elements $(els), basis functions $(a)..$(b) $(a>1 || b>N ? "⊂" : "⊆") 1..$(N)")
 end
 
-function block_structure(B::FEDVR)
-    if length(B.order) > 1
-        bs = o -> o > 2 ? [o-2,1] : [1]
-        Vector{Int}(vcat(B.order[1]-1,1,
-                         vcat([bs(B.order[i]) for i = 2:length(B.order)-1]...),
-                         B.order[end]-1))
+function block_orders(B::FEDVROrRestricted)
+    is = indices(B,2)
+    elb = element_boundaries(parent(B))
+    els = elements(B)
+    a,b = first(is),last(is)
+
+    # If the restriction only includes the bridge function of the
+    # first/last element covered, compute the block structure for one
+    # element further in, since it simplifies.
+    first(els) ≠ nel(parent(B)) && a == elb[first(els)+1] && (els = els[2:end])
+    last(els) > first(els) && b == elb[last(els)] && (els = els[1:end-1])
+    # Find out how much we need to "shave off" from the first and last
+    # elements (inside the restriction), respectively.
+    s = a-elb[first(els)]
+    e = elb[last(els)+1]-b
+
+    o = order(parent(B))[els]
+    o,s,e
+end
+
+function block_structure(B::FEDVROrRestricted)
+    o,s,e = block_orders(B)
+    if length(o) > 1
+        # First compute interior block structure; for each element,
+        # the interior block and the block for the bridge function
+        # connecting to /next/ element is added.
+        b = o -> o > 2 ? [o-2,1] : [1]
+        bs = reduce(vcat, map(b, o[2:end-1]), init=Int[])
+        # Add first element.
+        prepend!(bs, [o[1]-1-s,1])
+        # Add last element.
+        push!(bs, o[end]-1-e)
+        bs
     else
-        [B.order[1]]
+        [first(o)-(s+e)]
     end
 end
 
-function block_structure(B::RestrictedFEDVR)
-    B′ = parent(B)
-    bs = block_structure(B′)
-    a,b = restriction_extents(B)
-
-    a ≤ bs[1] && b ≤ bs[end] ||
-        throw(ArgumentError("Cannot restrict basis beyond first/last block"))
-    bs[1] -= a
-    bs[end] -= b
-    bs
-end
-
-function block_bandwidths(B::Union{FEDVR,RestrictedFEDVR}, rows::Vector{<:Integer})
+function block_bandwidths(B::FEDVROrRestricted, rows::Vector{<:Integer}=block_structure(B))
     nrows = length(rows)
     if nrows > 1
         bw = o -> o > 2 ? [2,1] : [1]
-        bws = bw.(order(B))
+        # This actually generates one element "too much", but it does
+        # not matter, since for the second last block, a lower
+        # bandwidth of two extends outside the matrix, and that is
+        # discarded.
+        bws = bw.(first(block_orders(B)))
         l = vcat(1,bws[2:end]...)
         u = vcat(reverse.(bws[1:end-1])...,1)
         length(l) < nrows && (l = vcat(l,0))
@@ -208,11 +240,6 @@ checkbounds(B::FEDVR{T}, x::Real, k::Integer) where T =
     end
     B[x,i,m]
 end
-
-# @inline function Base.getindex(B::RestrictedBasis{<:FEDVR{T}}, x::Real, k::Integer) where {T}
-#     B′,restriction = B.args
-#     B′[x,k+restriction.l]
-# end
 
 # * Types
 
@@ -321,30 +348,28 @@ function Base.:(\ )(B::RestrictedFEDVR{T}, f::BroadcastQuasiArray) where T
         throw(DimensionMismatch("Function on $(axes(f,1).domain) cannot be interpolated over basis on $(axes(B,1).domain)"))
 
     B′ = parent(B)
-    a,b = restriction_extents(B)
+    is = indices(B,2)
+    a,b = first(is),last(is)
 
     n = size(B′,2)
     v = zeros(T, size(B,2))
-    for i ∈ 1:nel(B′)
+    for i ∈ elements(B)
         sel = B′.elems[i]
         # Find which basis functions of finite-element `i` should be
         # evaluated.
-        subsel = if 1+a<sel[1] && n-b > sel[end]
+        subsel = if a<sel[1] && b > sel[end]
             # Element is completely within the restricted basis.
             Colon()
         else
-            # Element straddles restriction (we don't allow
-            # restrictions that would throw away an entire
-            # finite-element); find subset of functions that are
-            # within the restriction.
-            s = min(max(1+a,sel[1]),sel[end])
-            e = max(min(n-b,sel[end]),sel[1])
+            # Element straddles restriction; find subset of functions
+            # that are within the restriction.
+            s = min(max(a,sel[1]),sel[end])
+            e = max(min(b,sel[end]),sel[1])
             findfirst(isequal(s),sel):findfirst(isequal(e),sel)
         end
 
-        @. v[sel[subsel] .- a] += @view((B′.wⁱ[i]*f[@elem(B′,x,i)])[subsel])
+        @. v[sel[subsel] .- (a-1)] += @view((B′.wⁱ[i]*f[@elem(B′,x,i)])[subsel])
     end
-    v .*= @view(B′.n[1+a:end-b])
+    v .*= @view(B′.n[a:b])
     v
 end
-

@@ -59,51 +59,8 @@ end
 difffun(B::FEDVR, n::Integer) = i -> diff(B,n,i)
 difffun(B::RestrictedFEDVR, n::Integer) = i -> diff(parent(B),n,i)
 
-derop!(A::BlockSkylineMatrix{T}, B::FF, n::Integer) where {T,FF<:FEDVROrRestricted} =
-    set_blocks!(difffun(B,n), A, B)
-
-function derop!(A::Tridiagonal{T}, B::FEDVR{T}, n::Integer) where T
-    A.dl .= zero(T)
-    A.d .= zero(T)
-    A.du .= zero(T)
-
-    for i in eachindex(B.order)
-        b = diff(B,n,i)
-        A.dl[i] = b[2,1]
-        A.d[i:i+1] .+= diag(b)
-        A.du[i] = b[1,2]
-    end
-
-    A
-end
-
-function derop!(A::Tridiagonal{T}, B::RestrictedFEDVR, n::Integer) where T
-    B′ = parent(B)
-    s,e = restriction_extents(B)
-
-    A.dl .= zero(T)
-    A.d .= zero(T)
-    A.du .= zero(T)
-
-    nel = length(B′.order)
-    if s > 0
-        b = diff(B′,n,s)
-        A.d[1] = b[2,2]
-    end
-    for i in (1+s):(nel-e)
-        b = diff(B′,n,i)
-        ii = i-s
-        A.dl[ii] = b[2,1]
-        A.d[ii:ii+1] .+= diag(b)
-        A.du[ii] = b[1,2]
-    end
-    if e > 0
-        b = diff(B′,n,nel)
-        A.d[end] += b[1,1]
-    end
-
-    A
-end
+derop!(A, B::FEDVROrRestricted, n::Integer) =
+    set_elements!(difffun(B,n), A, B)
 
 const FlatFirstDerivative = Mul{<:Any, <:Tuple{
     <:QuasiAdjoint{<:Any, <:FEDVR},

@@ -73,9 +73,11 @@ end
         ("apply", (B,D) -> apply(*, B', D, B),
          (B,D) -> apply(*, B', D', D, B))
     ]
-        for (order,sel,N) in [(4,2:12,5),(4,1:13,5),([5,4,2,2],5:9,5),([5,4,3,2],5:10,5),
-                              (2,2:3,5),(2,2:4,5),(2,2:5,5),(2,1:5,5),
-                              (5,2:4,2)]
+        @testset "order = $(order), sel = $(sel), N = $N" for (order,sel,N) in [
+            (4,2:12,5),(4,1:13,5),([5,4,2,2],5:9,5),([5,4,3,2],5:10,5),
+            (2,2:3,5),(2,2:4,5),(2,2:5,5),(2,1:5,5),
+            (5,2:4,2)
+        ]
             t = range(0,stop=20,length=N)
 
             R = FEDVR(t, order)
@@ -100,6 +102,32 @@ end
             @test ∇̃² isa expT
 
             @test Matrix(∇²)[sel,sel] == Matrix(∇̃²)
+        end
+    end
+
+    @testset "Gradually decreasing size" begin
+        L = 20.0
+        n = 10
+        t = range(-L/2, stop=L/2, length=n)
+        B = FEDVR(t, [4,3,4,2,5,4,2,4,8])
+        x = axes(B,1)
+
+        D = Derivative(x)
+        Dm = apply(*, B', D, B)
+        @test Dm isa BlockSkylineMatrix
+
+        @testset "From the left, a = $a" for a = 1:size(B,2)
+            B̃ = B[:,a:end]
+            D̃m = apply(*, B̃', D, B̃)
+            @test D̃m isa BlockSkylineMatrix
+            @test Dm[a:end,a:end] == D̃m
+        end
+
+        @testset "From the right, b = $b" for b = size(B,2):-1:1
+            B̃ = B[:,1:b]
+            D̃m = apply(*, B̃', D, B̃)
+            @test D̃m isa BlockSkylineMatrix
+            @test Dm[1:b,1:b] == D̃m
         end
     end
 end
