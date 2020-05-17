@@ -1,5 +1,10 @@
 module FEDVRQuasi
 
+function __init__()
+    @warn "The FEDVRQuasi.jl package has been deprecated in favour of JuliaApproximation/CompactBases.jl"
+    nothing
+end
+
 import Base: axes, size, ==, getindex, checkbounds, copyto!, similar, diff, show
 import Base.Broadcast: materialize
 
